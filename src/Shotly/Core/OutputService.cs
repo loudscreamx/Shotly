@@ -21,12 +21,16 @@ public sealed class OutputService
     /// </summary>
     public void CopyToClipboard(BitmapSource image)
     {
+        // 24-битный кадр: у 32-битного DIB без альфы некоторые программы вставляют картинку прозрачной.
+        var rgb = new FormatConvertedBitmap(image, PixelFormats.Bgr24, null, 0);
+        rgb.Freeze();
+
         const int attempts = 10;
         for (int i = 1; ; i++)
         {
             try
             {
-                Clipboard.SetImage(image);
+                Clipboard.SetImage(rgb);
                 return;
             }
             catch (Exception ex) when (ex is COMException or ExternalException && i < attempts)

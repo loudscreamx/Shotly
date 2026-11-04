@@ -64,7 +64,7 @@ public sealed class SettingsStore
             }
 
             var json = File.ReadAllText(FilePath);
-            return JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings();
+            return Normalize(JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings());
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -73,6 +73,21 @@ public sealed class SettingsStore
             try { File.Copy(FilePath, FilePath + ".broken", overwrite: true); } catch { /* не критично */ }
             return new AppSettings();
         }
+    }
+
+    /// <summary>Подставляет умолчания вместо null и мусора, которые мог оставить ручной правкой пользователь.</summary>
+    private static AppSettings Normalize(AppSettings s)
+    {
+        var d = new AppSettings();
+        s.Hotkeys ??= new HotkeySettings();
+        s.Hotkeys.Region ??= d.Hotkeys.Region;
+        s.Hotkeys.Window ??= d.Hotkeys.Window;
+        s.Hotkeys.FullScreen ??= d.Hotkeys.FullScreen;
+        s.Hotkeys.RepeatLast ??= d.Hotkeys.RepeatLast;
+        if (string.IsNullOrWhiteSpace(s.SaveFolder))
+            s.SaveFolder = d.SaveFolder;
+        s.JpegQuality = Math.Clamp(s.JpegQuality, 1, 100);
+        return s;
     }
 
     public void Save(AppSettings settings)

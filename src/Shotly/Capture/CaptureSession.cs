@@ -101,7 +101,7 @@ public sealed class CaptureSession
                 Selection = new PxRect(r.X, r.Y, r.Width + 1, r.Height + 1).Intersect(Snapshot.VirtualBounds);
                 break;
             case SelectionState.Moving:
-                Selection = _moveOrigin.Offset(p.X - _anchor.X, p.Y - _anchor.Y).ClampInside(Snapshot.VirtualBounds);
+                Selection = ClampToMonitors(_moveOrigin.Offset(p.X - _anchor.X, p.Y - _anchor.Y));
                 break;
         }
 
@@ -136,8 +136,21 @@ public sealed class CaptureSession
 
         Selection = resize
             ? new PxRect(sel.X, sel.Y, Math.Max(1, sel.Width + dx), Math.Max(1, sel.Height + dy)).Intersect(Snapshot.VirtualBounds)
-            : sel.Offset(dx, dy).ClampInside(Snapshot.VirtualBounds);
+            : ClampToMonitors(sel.Offset(dx, dy));
         Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// Не даём сдвинуть выделение в «мёртвую зону» виртуального стола, где нет ни одного монитора
+    /// (там BitBlt даёт чёрные пиксели). Если выделение не помещается целиком на один монитор,
+    /// ограничиваемся общими границами стола.
+    /// </summary>
+    private PxRect ClampToMonitors(PxRect r)
+    {
+        var target = Monitors.FromRect(Snapshot.Monitors, r);
+        return r.Width <= target.Bounds.Width && r.Height <= target.Bounds.Height
+            ? r.ClampInside(target.Bounds)
+            : r.ClampInside(Snapshot.VirtualBounds);
     }
 
     /// <summary>Правый клик: сбросить выделение, а если его нет — выйти.</summary>

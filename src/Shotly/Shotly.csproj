@@ -18,6 +18,8 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <SatelliteResourceLanguages>ru;en</SatelliteResourceLanguages>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- WFO0003: WinForms просит задавать DPI через API, но WPF нужен именно манифест. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
 
   <!-- Публикация: один самодостаточный .exe, не требующий установленного .NET. -->

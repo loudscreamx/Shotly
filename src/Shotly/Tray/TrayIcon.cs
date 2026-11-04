@@ -21,6 +21,9 @@ public interface ITrayCommands
     void OpenSettingsFile();
     void SetAutostart(bool enabled);
     void Exit();
+
+    /// <summary>Запустить захват после того, как меню трея исчезнет с экрана.</summary>
+    void FromTrayMenu(Action capture);
 }
 
 /// <summary>Иконка в трее (WinForms NotifyIcon: самый надёжный вариант без сторонних пакетов).</summary>
@@ -34,14 +37,15 @@ public sealed class TrayIcon : IDisposable
     public TrayIcon(ITrayCommands commands, AppSettings settings)
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add(Item("Область", settings.Hotkeys.Region, commands.CaptureRegion));
-        menu.Items.Add(Item("Активное окно", settings.Hotkeys.Window, commands.CaptureWindow));
-        menu.Items.Add(Item("Весь экран", settings.Hotkeys.FullScreen, commands.CaptureFullScreen));
-        menu.Items.Add(Item("Повторить последнюю область", settings.Hotkeys.RepeatLast, commands.RepeatLastRegion));
+        Action later(Action a) => () => commands.FromTrayMenu(a);
+        menu.Items.Add(Item("Область", settings.Hotkeys.Region, later(commands.CaptureRegion)));
+        menu.Items.Add(Item("Активное окно", settings.Hotkeys.Window, later(commands.CaptureWindow)));
+        menu.Items.Add(Item("Весь экран", settings.Hotkeys.FullScreen, later(commands.CaptureFullScreen)));
+        menu.Items.Add(Item("Повторить последнюю область", settings.Hotkeys.RepeatLast, later(commands.RepeatLastRegion)));
 
         var delayed = new ToolStripMenuItem("С задержкой");
         foreach (var seconds in new[] { 3, 5, 10 })
-            delayed.DropDownItems.Add(Item($"{seconds} с", null, () => commands.CaptureRegionDelayed(seconds)));
+            delayed.DropDownItems.Add(Item($"{seconds} с", null, later(() => commands.CaptureRegionDelayed(seconds))));
         menu.Items.Add(delayed);
 
         menu.Items.Add(new ToolStripSeparator());
@@ -75,7 +79,7 @@ public sealed class TrayIcon : IDisposable
         _icon.MouseDoubleClick += (_, e) =>
         {
             if (e.Button == MouseButtons.Left)
-                commands.CaptureRegion();
+                commands.FromTrayMenu(commands.CaptureRegion);
         };
 
         UpdateFormat(settings.Format);
@@ -87,8 +91,18 @@ public sealed class TrayIcon : IDisposable
         _jpg.Checked = format == ImageFormatKind.Jpg;
     }
 
-    public void Notify(string title, string text, bool error = false) =>
-        _icon.ShowBalloonTip(3000, title, text, error ? ToolTipIcon.Error : ToolTipIcon.Info);
+    public void Notify(string title, string text, bool error = false)
+    {
+        try
+        {
+            _icon.ShowBalloonTip(3000, title, string.IsNullOrWhiteSpace(text) ? title : text,
+                error ? ToolTipIcon.Error : ToolTipIcon.Info);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось показать уведомление", ex);
+        }
+    }
 
     private static ToolStripMenuItem Item(string text, string? shortcut, Action action)
     {
