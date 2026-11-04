@@ -8,6 +8,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Shotly.Capture;
 using Shotly.Core;
+using Shotly.Editor;
 using Shotly.Native;
 
 namespace Shotly.Overlay;
@@ -54,6 +55,8 @@ public sealed class OverlayWindow : Window
         _surface = new SelectionSurface(session, monitor, background);
         _bar = new ActionBar { Visibility = Visibility.Collapsed };
         _bar.CommandInvoked += OnBarCommand;
+        _bar.ToolChosen += tool => _session.Edit(ed => { ed.FinishText(); ed.Tool = tool; });
+        _bar.ColorChosen += color => _session.Edit(ed => { ed.FinishText(); ed.Color = color; });
 
         var layer = new Canvas();
         layer.Children.Add(_bar);
@@ -76,7 +79,8 @@ public sealed class OverlayWindow : Window
         LostMouseCapture += (_, _) =>
         {
             // Захват мыши отобрали (Alt+Tab, Win) — завершаем перетаскивание, а не «залипаем» в нём.
-            if (_session.State is SelectionState.Dragging or SelectionState.Moving)
+            if (_session.State is SelectionState.Dragging or SelectionState.Moving
+                || _session.Editor is { IsDrawing: true })
                 _session.OnMouseUp();
         };
         MouseRightButtonUp += (_, e) =>
@@ -85,6 +89,14 @@ public sealed class OverlayWindow : Window
             _session.ResetOrCancel();
         };
         PreviewKeyDown += OnKeyDown;
+        PreviewTextInput += (_, e) =>
+        {
+            if (_session.Editor is { IsTyping: true })
+            {
+                _session.Edit(ed => ed.TypeText(e.Text));
+                e.Handled = true;
+            }
+        };
 
         _session.Changed += OnSessionChanged;
         Closed += (_, _) =>
@@ -152,16 +164,24 @@ public sealed class OverlayWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
-        bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        // AltGr приходит как Ctrl+Alt: без проверки Alt польское «ś» (AltGr+S) сохраняло бы снимок.
+        bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0 && (Keyboard.Modifiers & ModifierKeys.Alt) == 0;
         bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
-        int step = ctrl ? 10 : 1;
 
+        if (_session.State == SelectionState.Editing && _session.Editor is { } editor)
+        {
+            e.Handled = HandleEditorKey(editor, e.Key, ctrl, shift);
+            return;
+        }
+
+        int step = ctrl ? 10 : 1;
         switch (e.Key)
         {
             case Key.Escape: _session.Cancel(); break;
             case Key.Enter: _session.Complete(CaptureAction.Copy); break;
             case Key.C when ctrl: _session.Complete(CaptureAction.Copy); break;
             case Key.S when ctrl: _session.Complete(CaptureAction.Save); break;
+            case Key.E when !ctrl: _session.StartEditing(); break;
             case Key.Left: _session.Nudge(-step, 0, shift); break;
             case Key.Right: _session.Nudge(step, 0, shift); break;
             case Key.Up: _session.Nudge(0, -step, shift); break;
@@ -172,12 +192,70 @@ public sealed class OverlayWindow : Window
         e.Handled = true;
     }
 
+    /// <summary>Клавиши в режиме правки. Пока набирается текст, буквы уходят в текст, а не в выбор инструмента.</summary>
+    private bool HandleEditorKey(EditorState editor, Key key, bool ctrl, bool shift)
+    {
+        if (ctrl)
+        {
+            switch (key)
+            {
+                case Key.Z when shift: _session.Edit(ed => ed.Redo()); return true;
+                case Key.Z: _session.Edit(ed => ed.Undo()); return true;
+                case Key.Y: _session.Edit(ed => ed.Redo()); return true;
+                case Key.C: _session.Complete(CaptureAction.Copy); return true;
+                case Key.S: _session.Complete(CaptureAction.Save); return true;
+                default: return false;
+            }
+        }
+
+        if (editor.IsTyping)
+        {
+            switch (key)
+            {
+                case Key.Back: _session.Edit(ed => ed.Backspace()); return true;
+                case Key.Enter when shift: _session.Edit(ed => ed.NewLine()); return true;
+                case Key.Enter:
+                case Key.Escape: _session.Edit(ed => ed.FinishText()); return true;
+                default: return false; // символы придут в PreviewTextInput
+            }
+        }
+
+        EditorTool? tool = key switch
+        {
+            Key.A => EditorTool.Arrow,
+            Key.R => EditorTool.Rectangle,
+            Key.M => EditorTool.Marker,
+            Key.T => EditorTool.Text,
+            Key.B => EditorTool.Pixelate,
+            _ => null,
+        };
+        if (tool is { } t)
+        {
+            _session.Edit(ed => ed.Tool = t);
+            return true;
+        }
+
+        switch (key)
+        {
+            // Esc отменяет только незаконченную фигуру. Если правки уже есть, снимок отменяется кнопкой ×,
+            // чтобы случайный Esc не выбросил всю работу.
+            case Key.Escape when editor.IsDrawing: _session.Edit(ed => ed.CancelActive()); return true;
+            case Key.Escape when editor.Items.Count == 0: _session.Cancel(); return true;
+            case Key.Escape: return true;
+            case Key.Enter: _session.Complete(CaptureAction.Copy); return true;
+            default: return false;
+        }
+    }
+
     private void OnBarCommand(BarCommand command)
     {
         switch (command)
         {
             case BarCommand.Copy: _session.Complete(CaptureAction.Copy); break;
             case BarCommand.Save: _session.Complete(CaptureAction.Save); break;
+            case BarCommand.Edit: _session.StartEditing(); break;
+            case BarCommand.Undo: _session.Edit(ed => ed.Undo()); break;
+            case BarCommand.Redo: _session.Edit(ed => ed.Redo()); break;
             default: _session.Cancel(); break;
         }
     }
@@ -190,7 +268,11 @@ public sealed class OverlayWindow : Window
 
     private void UpdateActionBar()
     {
-        if (_session.State != SelectionState.Selected || _session.Selection is not { } sel)
+        Cursor = _session.State == SelectionState.Editing
+            ? (_session.Editor?.Tool == EditorTool.Text ? Cursors.IBeam : Cursors.Cross)
+            : Cursors.Cross;
+
+        if (_session.State is not (SelectionState.Selected or SelectionState.Editing) || _session.Selection is not { } sel)
         {
             _bar.Visibility = Visibility.Collapsed;
             return;
@@ -203,6 +285,7 @@ public sealed class OverlayWindow : Window
             return;
         }
 
+        _bar.Update(_session.Editor);
         _bar.Visibility = Visibility.Visible;
         _bar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
         var size = _bar.DesiredSize;
