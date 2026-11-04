@@ -4,15 +4,16 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Shotly.Core;
+using Shotly.Editor;
 using Shotly.Overlay;
 
 namespace Shotly.Capture;
 
 public enum CaptureAction { Copy, Save }
 
-public sealed record CaptureResult(PxRect Region, CaptureAction Action);
+public sealed record CaptureResult(PxRect Region, CaptureAction Action, IReadOnlyList<Annotation> Annotations);
 
-public enum SelectionState { Idle, Dragging, Moving, Selected }
+public enum SelectionState { Idle, Dragging, Moving, Selected, Editing }
 
 /// <summary>
 /// Одна сессия выделения области. Держит общее состояние (в физических пикселях)
@@ -34,6 +35,9 @@ public sealed class CaptureSession
     public PxRect? Selection { get; private set; }
     public SelectionState State { get; private set; } = SelectionState.Idle;
     public (int X, int Y) Cursor { get; private set; }
+
+    /// <summary>Редактор: появляется, когда пользователь переходит к правке выделения.</summary>
+    public EditorState? Editor { get; private set; }
 
     /// <summary>Перерисовать все оверлеи.</summary>
     public event Action? Changed;
@@ -70,6 +74,13 @@ public sealed class CaptureSession
         var p = ScreenCapture.CursorPosition();
         Cursor = p;
 
+        if (State == SelectionState.Editing)
+        {
+            Editor?.Begin(new System.Windows.Point(p.X, p.Y));
+            Changed?.Invoke();
+            return;
+        }
+
         if (State == SelectionState.Selected && Selection is { } sel && sel.Contains(p.X, p.Y))
         {
             State = SelectionState.Moving;
@@ -93,6 +104,16 @@ public sealed class CaptureSession
             return;
         Cursor = p;
 
+        if (State == SelectionState.Editing)
+        {
+            if (Editor is { IsDrawing: true } editor)
+            {
+                editor.Update(new System.Windows.Point(p.X, p.Y));
+                Changed?.Invoke();
+            }
+            return;
+        }
+
         switch (State)
         {
             case SelectionState.Dragging:
@@ -110,6 +131,13 @@ public sealed class CaptureSession
 
     public void OnMouseUp()
     {
+        if (State == SelectionState.Editing)
+        {
+            Editor?.End();
+            Changed?.Invoke();
+            return;
+        }
+
         if (State == SelectionState.Dragging)
         {
             if (Selection is not { } sel || sel.Width < MinSize || sel.Height < MinSize)
@@ -153,9 +181,32 @@ public sealed class CaptureSession
             : r.ClampInside(Snapshot.VirtualBounds);
     }
 
-    /// <summary>Правый клик: сбросить выделение, а если его нет — выйти.</summary>
+    /// <summary>Перейти от выделения к правке: стрелки, рамки, маркер, текст, пикселизация.</summary>
+    public void StartEditing()
+    {
+        if (State != SelectionState.Selected || Selection is not { } sel)
+            return;
+        var scale = Monitors.FromRect(Snapshot.Monitors, sel).Scale;
+        Editor = new EditorState(Snapshot, sel, scale);
+        State = SelectionState.Editing;
+        Changed?.Invoke();
+    }
+
+    /// <summary>Любое изменение в редакторе (инструмент, цвет, текст, undo) — перерисовать.</summary>
+    public void Edit(Action<EditorState> change)
+    {
+        if (State != SelectionState.Editing || Editor is null)
+            return;
+        change(Editor);
+        Changed?.Invoke();
+    }
+
+    /// <summary>Правый клик: сбросить выделение, а если его нет — выйти. В режиме правки ничего не делает, чтобы не потерять работу.</summary>
     public void ResetOrCancel()
     {
+        if (State == SelectionState.Editing)
+            return;
+
         if (State == SelectionState.Selected)
         {
             Selection = null;
@@ -170,9 +221,10 @@ public sealed class CaptureSession
 
     public void Complete(CaptureAction action)
     {
-        if (State != SelectionState.Selected || Selection is not { } sel || sel.IsEmpty)
+        if (State is not (SelectionState.Selected or SelectionState.Editing) || Selection is not { } sel || sel.IsEmpty)
             return;
-        Finish(new CaptureResult(sel, action));
+        Editor?.FinishText();
+        Finish(new CaptureResult(sel, action, Editor?.Items.ToList() ?? new List<Annotation>()));
     }
 
     public void Cancel() => Finish(null);

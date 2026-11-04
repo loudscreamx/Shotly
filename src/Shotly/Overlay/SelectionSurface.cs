@@ -38,7 +38,6 @@ public sealed class SelectionSurface : FrameworkElement
         _background = background;
         SnapsToDevicePixels = true;
         RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
-        RenderOptions.SetEdgeMode(this, EdgeMode.Aliased);
     }
 
     /// <summary>Физические пиксели рабочего стола → DIP этого окна. Масштаб считаем из фактического размера окна.</summary>
@@ -82,7 +81,12 @@ public sealed class SelectionSurface : FrameworkElement
             dc.DrawRectangle(null, AccentPen, new Rect(local.X - half, local.Y - half, local.Width + 2 * half, local.Height + 2 * half));
 
             // Размер подписываем только на мониторе, где лежит левый верхний угол выделения.
-            if (Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
+            if (_session.Editor is { } editor && !visible.IsEmpty)
+                DrawAnnotations(dc, editor, visible);
+
+            // В режиме правки размер уже не нужен и только мешает.
+            if (_session.State != SelectionState.Editing
+                && Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
                 DrawSizeLabel(dc, local, sel);
         }
         else if (_monitor.Bounds.Contains(_session.Cursor.X, _session.Cursor.Y))
@@ -90,6 +94,22 @@ public sealed class SelectionSurface : FrameworkElement
             DrawCrosshair(dc, w, h);
             DrawHint(dc, w);
         }
+    }
+
+    /// <summary>
+    /// Аннотации хранятся в физических пикселях; переводим их в DIP этого окна одной матрицей
+    /// и обрезаем по видимой на этом мониторе части выделения.
+    /// </summary>
+    private void DrawAnnotations(DrawingContext dc, Shotly.Editor.EditorState editor, PxRect visible)
+    {
+        double sx = _monitor.Bounds.Width / Math.Max(1, ActualWidth);
+        double sy = _monitor.Bounds.Height / Math.Max(1, ActualHeight);
+        dc.PushClip(new RectangleGeometry(ToLocal(visible)));
+        dc.PushTransform(new MatrixTransform(1 / sx, 0, 0, 1 / sy, -_monitor.Bounds.X / sx, -_monitor.Bounds.Y / sy));
+        foreach (var a in editor.Visible)
+            a.Render(dc);
+        dc.Pop();
+        dc.Pop();
     }
 
     private void DrawSizeLabel(DrawingContext dc, Rect local, PxRect sel)
