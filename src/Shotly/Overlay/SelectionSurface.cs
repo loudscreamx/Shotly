@@ -80,11 +80,10 @@ public sealed class SelectionSurface : FrameworkElement
             // Рамка рисуется снаружи выделения и не перекрывает пиксели, которые попадут в снимок.
             dc.DrawRectangle(null, AccentPen, new Rect(local.X - half, local.Y - half, local.Width + 2 * half, local.Height + 2 * half));
 
-            // Размер подписываем только на мониторе, где лежит левый верхний угол выделения.
             if (_session.Editor is { } editor && !visible.IsEmpty)
                 DrawAnnotations(dc, editor, visible);
 
-            // В режиме правки размер уже не нужен и только мешает.
+            // Размер подписываем только на мониторе с левым верхним углом выделения; в режиме правки он не нужен.
             if (_session.State != SelectionState.Editing
                 && Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
                 DrawSizeLabel(dc, local, sel);

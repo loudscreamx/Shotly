@@ -183,7 +183,18 @@ public partial class App : Application, ITrayCommands
         _settings.LastRegionLayout = snapshot.LayoutKey;
         _store.Save(_settings);
 
-        var image = ImageComposer.Compose(snapshot, result.Region, result.Annotations);
+        BitmapSource image;
+        try
+        {
+            image = ImageComposer.Compose(snapshot, result.Region, result.Annotations);
+        }
+        catch (Exception ex) when (ex is OutOfMemoryException or System.Runtime.InteropServices.COMException)
+        {
+            // Огромное выделение с правками может не влезть в память: отдаём хотя бы снимок без них.
+            Log.Error("Не удалось наложить правки на снимок", ex);
+            _tray?.Notify("Правки не сохранились", "Снимок слишком большой, сохранён без аннотаций.", error: true);
+            image = snapshot.Crop(result.Region);
+        }
         Deliver(image, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
     }
 

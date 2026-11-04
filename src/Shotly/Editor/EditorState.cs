@@ -114,8 +114,18 @@ public sealed class EditorState
 
     public void Backspace()
     {
-        if (Active is TextAnnotation { Text.Length: > 0 } t)
-            t.Text = t.Text[..^1];
+        if (Active is not TextAnnotation { Text.Length: > 0 } t)
+            return;
+        // Эмодзи и другие суррогатные пары удаляем целиком.
+        int cut = t.Text.Length >= 2 && char.IsLowSurrogate(t.Text[^1]) && char.IsHighSurrogate(t.Text[^2]) ? 2 : 1;
+        t.Text = t.Text[..^cut];
+    }
+
+    /// <summary>Отменить фигуру, которая рисуется прямо сейчас (Esc с зажатой мышью).</summary>
+    public void CancelActive()
+    {
+        if (IsDrawing)
+            Active = null;
     }
 
     /// <summary>Завершить набор текста (Enter, Esc, клик в другом месте, сохранение).</summary>
@@ -130,9 +140,16 @@ public sealed class EditorState
 
     public void Undo()
     {
-        if (Active is TextAnnotation)
+        if (IsDrawing)
+            return; // мышь ещё зажата — сначала доделать или отменить фигуру (Esc)
+
+        if (Active is TextAnnotation t)
         {
-            Active = null; // отменить набираемый текст
+            // Набираемый текст отменяется как обычная аннотация и возвращается по Ctrl+Y.
+            t.IsEditing = false;
+            Active = null;
+            if (!t.IsEmpty)
+                _redo.Push(t);
             return;
         }
 
@@ -144,6 +161,8 @@ public sealed class EditorState
 
     public void Redo()
     {
+        if (IsDrawing)
+            return;
         FinishText();
         if (_redo.Count > 0)
             _items.Add(_redo.Pop());
@@ -155,6 +174,8 @@ public sealed class EditorState
         Active = null;
         if (a is null || a.IsEmpty)
             return;
+        if (a is PixelateAnnotation p)
+            p.IsPreview = false;
         _items.Add(a);
         _redo.Clear();
     }
