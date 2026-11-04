@@ -56,7 +56,7 @@ public sealed class OverlayWindow : Window
         _bar = new ActionBar { Visibility = Visibility.Collapsed };
         _bar.CommandInvoked += OnBarCommand;
         _bar.ToolChosen += tool => _session.Edit(ed => { ed.FinishText(); ed.Tool = tool; });
-        _bar.ColorChosen += color => _session.Edit(ed => ed.Color = color);
+        _bar.ColorChosen += color => _session.Edit(ed => { ed.FinishText(); ed.Color = color; });
 
         var layer = new Canvas();
         layer.Children.Add(_bar);
@@ -164,7 +164,8 @@ public sealed class OverlayWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
-        bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+        // AltGr приходит как Ctrl+Alt: без проверки Alt польское «ś» (AltGr+S) сохраняло бы снимок.
+        bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0 && (Keyboard.Modifiers & ModifierKeys.Alt) == 0;
         bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
 
         if (_session.State == SelectionState.Editing && _session.Editor is { } editor)
@@ -236,7 +237,11 @@ public sealed class OverlayWindow : Window
 
         switch (key)
         {
-            case Key.Escape: _session.Cancel(); return true;
+            // Esc отменяет только незаконченную фигуру. Если правки уже есть, снимок отменяется кнопкой ×,
+            // чтобы случайный Esc не выбросил всю работу.
+            case Key.Escape when editor.IsDrawing: _session.Edit(ed => ed.CancelActive()); return true;
+            case Key.Escape when editor.Items.Count == 0: _session.Cancel(); return true;
+            case Key.Escape: return true;
             case Key.Enter: _session.Complete(CaptureAction.Copy); return true;
             default: return false;
         }

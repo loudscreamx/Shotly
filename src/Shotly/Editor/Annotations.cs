@@ -220,6 +220,14 @@ public sealed class PixelateAnnotation : DragAnnotation
 
     public override bool IsEmpty => Area.IsEmpty || Area.Width < 3 || Area.Height < 3;
 
+    /// <summary>
+    /// Пока область тянется мышью, рисуем лёгкую заглушку: пересчитывать пикселизацию большой области
+    /// на каждое движение мыши дорого. Настоящие блоки строятся один раз, когда мышь отпущена.
+    /// </summary>
+    public bool IsPreview { get; set; } = true;
+
+    private static readonly Brush PreviewFill = Frozen(new SolidColorBrush(Color.FromArgb(0x99, 0x80, 0x80, 0x80)));
+
     /// <summary>Прямоугольник в целых физических пикселях внутри снимка.</summary>
     private Rect Area
     {
@@ -237,6 +245,12 @@ public sealed class PixelateAnnotation : DragAnnotation
         var area = Area;
         if (area.IsEmpty || area.Width < 1 || area.Height < 1)
             return;
+
+        if (IsPreview)
+        {
+            dc.DrawRectangle(PreviewFill, null, area);
+            return;
+        }
 
         if (_cached is null || area != _cachedFor)
         {

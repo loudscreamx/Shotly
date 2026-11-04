@@ -33,6 +33,10 @@ public static class ImageComposer
         var bitmap = new RenderTargetBitmap(r.Width, r.Height, 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(visual);
         bitmap.Freeze();
-        return bitmap;
+
+        // Без альфа-канала, как и снимок без правок: файлы не тяжелеют из-за одной стрелки.
+        var opaque = new FormatConvertedBitmap(bitmap, PixelFormats.Bgr32, null, 0);
+        opaque.Freeze();
+        return opaque;
     }
 }
