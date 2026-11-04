@@ -15,11 +15,10 @@ public interface ITrayCommands
     void CaptureFullScreen();
     void RepeatLastRegion();
     void CaptureRegionDelayed(int seconds);
-    void SetFormat(ImageFormatKind format);
-    void ChooseSaveFolder();
     void OpenSaveFolder();
-    void OpenSettingsFile();
-    void SetAutostart(bool enabled);
+    void OpenSettings();
+    void CheckForUpdates();
+    void Uninstall();
     void Exit();
 
     /// <summary>Запустить захват после того, как меню трея исчезнет с экрана.</summary>
@@ -30,18 +29,24 @@ public interface ITrayCommands
 public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _icon;
-    private readonly ToolStripMenuItem _png;
-    private readonly ToolStripMenuItem _jpg;
-    private readonly ToolStripMenuItem _autostart;
+    private readonly ToolStripMenuItem _region;
+    private readonly ToolStripMenuItem _window;
+    private readonly ToolStripMenuItem _full;
+    private readonly ToolStripMenuItem _repeat;
+    private Action? _balloonAction;
 
     public TrayIcon(ITrayCommands commands, AppSettings settings)
     {
         var menu = new ContextMenuStrip();
         Action later(Action a) => () => commands.FromTrayMenu(a);
-        menu.Items.Add(Item("Область", settings.Hotkeys.Region, later(commands.CaptureRegion)));
-        menu.Items.Add(Item("Активное окно", settings.Hotkeys.Window, later(commands.CaptureWindow)));
-        menu.Items.Add(Item("Весь экран", settings.Hotkeys.FullScreen, later(commands.CaptureFullScreen)));
-        menu.Items.Add(Item("Повторить последнюю область", settings.Hotkeys.RepeatLast, later(commands.RepeatLastRegion)));
+        _region = Item("Область", null, later(commands.CaptureRegion));
+        _window = Item("Активное окно", null, later(commands.CaptureWindow));
+        _full = Item("Весь экран", null, later(commands.CaptureFullScreen));
+        _repeat = Item("Повторить последнюю область", null, later(commands.RepeatLastRegion));
+        menu.Items.Add(_region);
+        menu.Items.Add(_window);
+        menu.Items.Add(_full);
+        menu.Items.Add(_repeat);
 
         var delayed = new ToolStripMenuItem("С задержкой");
         foreach (var seconds in new[] { 3, 5, 10 })
@@ -49,25 +54,15 @@ public sealed class TrayIcon : IDisposable
         menu.Items.Add(delayed);
 
         menu.Items.Add(new ToolStripSeparator());
-
-        var format = new ToolStripMenuItem("Формат");
-        _png = Item("PNG", null, () => commands.SetFormat(ImageFormatKind.Png));
-        _jpg = Item("JPG", null, () => commands.SetFormat(ImageFormatKind.Jpg));
-        format.DropDownItems.Add(_png);
-        format.DropDownItems.Add(_jpg);
-        menu.Items.Add(format);
-        menu.Items.Add(Item("Папка сохранения…", null, commands.ChooseSaveFolder));
         menu.Items.Add(Item("Открыть папку со снимками", null, commands.OpenSaveFolder));
-        menu.Items.Add(Item("Открыть файл настроек", null, commands.OpenSettingsFile));
-
-        _autostart = new ToolStripMenuItem("Запускать при входе в Windows") { CheckOnClick = true };
-        _autostart.Click += (_, _) => commands.SetAutostart(_autostart.Checked);
-        menu.Items.Add(_autostart);
+        var settingsItem = Item("Настройки…", null, commands.OpenSettings);
+        settingsItem.Font = new Font(settingsItem.Font, FontStyle.Bold);
+        menu.Items.Add(settingsItem);
+        menu.Items.Add(Item("Проверить обновления", null, commands.CheckForUpdates));
 
         menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Item("Удалить Shotly…", null, commands.Uninstall));
         menu.Items.Add(Item("Выход", null, commands.Exit));
-
-        menu.Opening += (_, _) => _autostart.Checked = SafeAutostartState();
 
         _icon = new NotifyIcon
         {
@@ -81,18 +76,35 @@ public sealed class TrayIcon : IDisposable
             if (e.Button == MouseButtons.Left)
                 commands.FromTrayMenu(commands.CaptureRegion);
         };
+        _icon.BalloonTipClicked += (_, _) =>
+        {
+            var action = _balloonAction;
+            _balloonAction = null;
+            action?.Invoke();
+        };
 
-        UpdateFormat(settings.Format);
+        UpdateHotkeys(settings.Hotkeys);
     }
 
-    public void UpdateFormat(ImageFormatKind format)
+    /// <summary>Подписи сочетаний в меню после изменения настроек.</summary>
+    public void UpdateHotkeys(HotkeySettings h)
     {
-        _png.Checked = format == ImageFormatKind.Png;
-        _jpg.Checked = format == ImageFormatKind.Jpg;
+        _region.ShortcutKeyDisplayString = h.Region;
+        _window.ShortcutKeyDisplayString = h.Window;
+        _full.ShortcutKeyDisplayString = h.FullScreen;
+        _repeat.ShortcutKeyDisplayString = h.RepeatLast;
+    }
+
+    /// <summary>Уведомление, по щелчку на которое выполняется действие (например, установка обновления).</summary>
+    public void Notify(string title, string text, Action onClick)
+    {
+        Notify(title, text);
+        _balloonAction = onClick;
     }
 
     public void Notify(string title, string text, bool error = false)
     {
+        _balloonAction = null;
         try
         {
             _icon.ShowBalloonTip(3000, title, string.IsNullOrWhiteSpace(text) ? title : text,
@@ -111,12 +123,6 @@ public sealed class TrayIcon : IDisposable
             item.ShortcutKeyDisplayString = shortcut;
         item.Click += (_, _) => action();
         return item;
-    }
-
-    private static bool SafeAutostartState()
-    {
-        try { return Autostart.IsEnabled; }
-        catch (Exception ex) { Log.Error("Не удалось прочитать автозапуск", ex); return false; }
     }
 
     /// <summary>Иконка рисуется в коде: синий скруглённый квадрат с белой «рамкой выделения».</summary>
