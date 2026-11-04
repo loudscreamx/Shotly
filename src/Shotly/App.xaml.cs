@@ -29,6 +29,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     private readonly List<RegisteredWaitHandle> _waits = new();
     private SettingsWindow? _settingsWindow;
     private bool _updating;
+    private bool _uninstalled;
     private SettingsStore _store = null!;
     private AppSettings _settings = null!;
     private OutputService _output = null!;
@@ -360,12 +361,13 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
         // Пока окно открыто, глобальные сочетания сняты: иначе нажатие текущего сочетания
         // в поле ввода запустило бы захват вместо того, чтобы записаться.
-        _hotkeys?.UnregisterAll();
         _settingsWindow = new SettingsWindow(this, _settings, autostart);
+        _hotkeys?.UnregisterAll();
         _settingsWindow.Closed += (_, _) =>
         {
             _settingsWindow = null;
-            RegisterHotkeys();
+            if (!_uninstalled)
+                RegisterHotkeys();
             Memory.Trim();
         };
         _settingsWindow.Show();
@@ -413,7 +415,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(15)); // не мешаем запуску
-            var info = await Updater.CheckAsync(_settings.UpdateRepository);
+            var info = await Updater.CheckAsync(_settings.EffectiveUpdateRepository);
             if (info is not null)
                 _tray?.Notify("Доступна новая версия Shotly", $"Версия {info.Version}. Нажмите, чтобы установить.",
                     () => InstallUpdate(info, ask: false));
@@ -432,7 +434,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         UpdateInfo? info;
         try
         {
-            info = await Updater.CheckAsync(_settings.UpdateRepository);
+            info = await Updater.CheckAsync(_settings.EffectiveUpdateRepository);
         }
         catch (Exception ex)
         {
@@ -458,8 +460,10 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     {
         if (_updating)
             return;
-        if (ask && MessageBox.Show($"Доступна версия {info.Version} (у вас {Installation.Version}).\n\nУстановить сейчас? Shotly перезапустится.",
-                "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+        if (ask && (_settingsWindow is { IsVisible: true } w ? MessageBox.Show(w, $"Доступна версия {info.Version} (у вас {Installation.Version}).\n\nУстановить сейчас? Shotly перезапустится.",
+                "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)
+            : MessageBox.Show($"Доступна версия {info.Version} (у вас {Installation.Version}).\n\nУстановить сейчас? Shotly перезапустится.",
+                "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)) != MessageBoxResult.Yes)
             return;
 
         _updating = true;
@@ -485,8 +489,9 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     {
         if (!ConfirmUninstall())
             return;
-        Installation.Uninstall(_store);
-        ShowMessage("Shotly удалён. Ваши снимки остались в папке:\n" + _settings.SaveFolder, MessageBoxImage.Information);
+        _uninstalled = true;
+        bool exeScheduled = Installation.Uninstall(_store);
+        ShowUninstalled(_settings.SaveFolder, exeScheduled);
         Shutdown();
     }
 
@@ -501,23 +506,33 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
         // Закрываем работающий экземпляр и ждём, пока он отпустит мьютекс (и exe-файл).
         Signal(ExitEventName);
+        bool closed;
         using (var mutex = new Mutex(false, MutexName))
         {
             try
             {
-                if (mutex.WaitOne(TimeSpan.FromSeconds(10)))
+                closed = mutex.WaitOne(TimeSpan.FromSeconds(10));
+                if (closed)
                     mutex.ReleaseMutex();
             }
             catch (AbandonedMutexException)
             {
-                // Прежний процесс завершился, не освободив мьютекс, — значит, он уже закрыт.
+                closed = true; // прежний процесс завершился, не освободив мьютекс
             }
+        }
+
+        if (!closed)
+        {
+            ShowMessage("Shotly всё ещё запущен. Закройте его через значок в трее («Выход») и повторите удаление.",
+                MessageBoxImage.Warning);
+            Shutdown();
+            return;
         }
 
         var store = new SettingsStore();
         var folder = store.Load().SaveFolder;
-        Installation.Uninstall(store);
-        ShowMessage("Shotly удалён. Ваши снимки остались в папке:\n" + folder, MessageBoxImage.Information);
+        bool exeScheduled = Installation.Uninstall(store);
+        ShowUninstalled(folder, exeScheduled);
         Shutdown();
     }
 
@@ -526,8 +541,22 @@ public partial class App : Application, ITrayCommands, ISettingsHost
                         "Сделанные снимки останутся на месте.",
             "Удаление Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
 
-    private static void ShowMessage(string text, MessageBoxImage icon) =>
-        MessageBox.Show(text, "Shotly", MessageBoxButton.OK, icon);
+    private void ShowUninstalled(string folder, bool exeScheduled)
+    {
+        var text = "Shotly удалён. Ваши снимки остались в папке:\n" + folder;
+        if (!exeScheduled)
+            text += "\n\nФайл программы удалите вручную:\n" + Installation.ExePath;
+        ShowMessage(text, MessageBoxImage.Information);
+    }
+
+    /// <summary>Сообщение поверх окна настроек, если оно открыто, иначе оно может оказаться под ним.</summary>
+    private void ShowMessage(string text, MessageBoxImage icon)
+    {
+        if (_settingsWindow is { IsVisible: true } owner)
+            MessageBox.Show(owner, text, "Shotly", MessageBoxButton.OK, icon);
+        else
+            MessageBox.Show(text, "Shotly", MessageBoxButton.OK, icon);
+    }
 
     // ---- Прочее ------------------------------------------------------------------------
 

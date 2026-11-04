@@ -36,7 +36,6 @@ public static class Installation
         key.SetValue("DisplayIcon", $"\"{exe}\",0");
         key.SetValue("InstallLocation", Path.GetDirectoryName(exe) ?? string.Empty);
         key.SetValue("UninstallString", $"\"{exe}\" --uninstall");
-        key.SetValue("QuietUninstallString", $"\"{exe}\" --uninstall");
         key.SetValue("NoModify", 1, RegistryValueKind.DWord);
         key.SetValue("NoRepair", 1, RegistryValueKind.DWord);
         if (key.GetValue("InstallDate") is null)
@@ -55,30 +54,67 @@ public static class Installation
     /// Удаляет всё, что Shotly оставляет в системе: автозапуск, запись в «Установленных приложениях»,
     /// настройки и лог. Снимки пользователя не трогает. Сам exe удаляется скриптом после выхода процесса.
     /// </summary>
-    public static void Uninstall(SettingsStore store)
+    /// <returns>false, если exe не получится удалить автоматически (его нужно удалить вручную).</returns>
+    public static bool Uninstall(SettingsStore store)
     {
+        var exe = ExePath;
+        var exeDir = Path.GetDirectoryName(exe) ?? string.Empty;
+        var logDir = Path.GetDirectoryName(Log.FilePath)!;
+
         TryRun(() => Autostart.Set(false));
         TryRun(() => Registry.CurrentUser.DeleteSubKeyTree(UninstallKey, throwOnMissingSubKey: false));
         TryRun(() => DeleteDirectory(store.Directory));
-        TryRun(() => DeleteDirectory(Path.GetDirectoryName(Log.FilePath)!));
-        ScheduleDelete(ExePath);
+
+        // Папку, в которой лежит сам exe, удаляет скрипт после выхода процесса.
+        bool logDirHoldsExe = IsSameOrInside(exeDir, logDir) || IsSameOrInside(exeDir, store.Directory);
+
+        bool scheduled;
+        try
+        {
+            ScheduleDelete(exe, logDirHoldsExe ? logDir : null);
+            scheduled = true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось запланировать удаление exe", ex);
+            scheduled = false;
+        }
+
+        // Лог удаляется последним, и после этого ничего не пишется, иначе папка появится снова.
+        if (!logDirHoldsExe)
+        {
+            try { DeleteDirectory(logDir); }
+            catch (Exception) { /* лог больше некуда писать */ }
+        }
+        return scheduled;
+    }
+
+    private static bool IsSameOrInside(string path, string dir)
+    {
+        var p = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+        var d = Path.TrimEndingDirectorySeparator(Path.GetFullPath(dir));
+        return p.Equals(d, StringComparison.OrdinalIgnoreCase)
+            || p.StartsWith(d + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
     /// Скрытый скрипт ждёт выхода процесса (пока он жив, exe занят) и удаляет файл.
     /// </summary>
-    private static void ScheduleDelete(string exe)
+    private static void ScheduleDelete(string exe, string? extraDir)
     {
+        var extra = extraDir is null ? string.Empty
+            : $"\nRemove-Item -LiteralPath {Quote(extraDir)} -Recurse -Force -ErrorAction SilentlyContinue";
         RunAfterExit($@"
 for ($i = 0; $i -lt 30; $i++) {{
   Remove-Item -LiteralPath {Quote(exe)} -Force -ErrorAction SilentlyContinue
   if (-not (Test-Path -LiteralPath {Quote(exe)})) {{ break }}
   Start-Sleep -Seconds 1
-}}");
+}}{extra}");
     }
 
     /// <summary>
-    /// Запускает PowerShell-скрипт, который сначала ждёт завершения текущего процесса.
+    /// Запускает PowerShell-скрипт, который сначала ждёт завершения текущего процесса (без ограничения:
+    /// процесс может ждать, пока пользователь закроет последнее сообщение).
     /// PowerShell и -EncodedCommand (UTF-16) выбраны вместо .cmd: пути с кириллицей
     /// (C:\Users\Мария\...) в cmd-файле ломаются из-за кодовой страницы консоли.
     /// </summary>
@@ -87,7 +123,7 @@ for ($i = 0; $i -lt 30; $i++) {{
         int pid = Environment.ProcessId;
         var script = $@"
 $p = Get-Process -Id {pid} -ErrorAction SilentlyContinue
-if ($p) {{ $p.WaitForExit(30000) | Out-Null }}
+if ($p) {{ $p.WaitForExit() }}
 {body}";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         Process.Start(new ProcessStartInfo("powershell.exe",

@@ -31,10 +31,30 @@ public sealed class AppSettings
     /// <summary>Проверять обновления при запуске (один запрос к GitHub, без фоновых таймеров).</summary>
     public bool CheckUpdates { get; set; } = true;
 
-    /// <summary>Репозиторий GitHub (owner/name), в релизах которого лежит Shotly.exe.</summary>
-    public string UpdateRepository { get; set; } = DefaultUpdateRepository;
+    /// <summary>
+    /// Репозиторий GitHub (owner/name) с релизами Shotly.exe, если его задали вручную в settings.json.
+    /// Пусто — используется источник, вшитый в сборку (он может смениться с новой версией).
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? UpdateRepository { get; set; }
 
-    public const string DefaultUpdateRepository = "loudscreamx/Shotly";
+    [JsonIgnore]
+    public string EffectiveUpdateRepository =>
+        string.IsNullOrWhiteSpace(UpdateRepository) ? DefaultUpdateRepository : UpdateRepository;
+
+    /// <summary>
+    /// Источник обновлений по умолчанию. CI может подставить открытый репозиторий для exe
+    /// через -p:UpdateRepository=owner/name (попадает в AssemblyMetadata).
+    /// </summary>
+    public static string DefaultUpdateRepository { get; } = ReadDefaultRepository();
+
+    private static string ReadDefaultRepository()
+    {
+        foreach (var a in typeof(AppSettings).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), false))
+            if (a is System.Reflection.AssemblyMetadataAttribute { Key: "UpdateRepository", Value: { Length: > 0 } v })
+                return v;
+        return "loudscreamx/Shotly";
+    }
 
     /// <summary>Копия для окна настроек: правки применяются, только если нажать «Сохранить».</summary>
     public AppSettings Clone()
@@ -109,8 +129,6 @@ public sealed class SettingsStore
         if (string.IsNullOrWhiteSpace(s.SaveFolder))
             s.SaveFolder = d.SaveFolder;
         s.JpegQuality = Math.Clamp(s.JpegQuality, 1, 100);
-        if (string.IsNullOrWhiteSpace(s.UpdateRepository))
-            s.UpdateRepository = AppSettings.DefaultUpdateRepository;
         return s;
     }
 

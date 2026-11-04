@@ -82,7 +82,6 @@ public sealed class TrayIcon : IDisposable
             _balloonAction = null;
             action?.Invoke();
         };
-        _icon.BalloonTipClosed += (_, _) => _balloonAction = null;
 
         UpdateHotkeys(settings.Hotkeys);
     }

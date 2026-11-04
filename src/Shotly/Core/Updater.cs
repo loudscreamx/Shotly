@@ -104,16 +104,22 @@ public static class Updater
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, $"Shotly-{info.Version}.exe");
 
+        // Timeout HttpClient не ограничивает чтение тела ответа, поэтому общий предел на всю загрузку.
+        using var limit = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        limit.CancelAfter(TimeSpan.FromMinutes(10));
         try
         {
-            using var response = await Http.Value.GetAsync(info.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await Http.Value.GetAsync(info.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, limit.Token);
             response.EnsureSuccessStatusCode();
             await using (var file = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None))
-                await response.Content.CopyToAsync(file, ct);
+                await response.Content.CopyToAsync(file, limit.Token);
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is HttpRequestException or IOException or OperationCanceledException)
         {
-            throw new UpdateException("Не удалось скачать обновление.", ex);
+            try { File.Delete(path); } catch (IOException) { }
+            throw new UpdateException(ex is OperationCanceledException
+                ? "Загрузка обновления прервана по таймауту."
+                : "Не удалось скачать обновление.", ex);
         }
 
         // Защита от обрезанной загрузки: настоящий exe весит десятки мегабайт.

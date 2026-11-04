@@ -41,9 +41,11 @@ public sealed class HotkeyBox : TextBox
             return;
         }
 
-        if (key == Key.Tab && mods == ModifierKeys.None)
+        // Tab/Shift+Tab переходят между полями, Enter и Esc — «Сохранить» и «Отмена».
+        if ((key == Key.Tab && mods is ModifierKeys.None or ModifierKeys.Shift)
+            || (key is Key.Enter or Key.Escape && mods == ModifierKeys.None))
         {
-            e.Handled = false; // Tab переходит к следующему полю
+            e.Handled = false;
             return;
         }
 
