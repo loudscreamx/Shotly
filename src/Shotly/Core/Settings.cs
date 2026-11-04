@@ -28,6 +28,28 @@ public sealed class AppSettings
     public QuickAction QuickAction { get; set; } = QuickAction.CopyAndSave;
     public HotkeySettings Hotkeys { get; set; } = new();
 
+    /// <summary>Проверять обновления при запуске (один запрос к GitHub, без фоновых таймеров).</summary>
+    public bool CheckUpdates { get; set; } = true;
+
+    /// <summary>Репозиторий GitHub (owner/name), в релизах которого лежит Shotly.exe.</summary>
+    public string UpdateRepository { get; set; } = DefaultUpdateRepository;
+
+    public const string DefaultUpdateRepository = "loudscreamx/Shotly";
+
+    /// <summary>Копия для окна настроек: правки применяются, только если нажать «Сохранить».</summary>
+    public AppSettings Clone()
+    {
+        var c = (AppSettings)MemberwiseClone();
+        c.Hotkeys = new HotkeySettings
+        {
+            Region = Hotkeys.Region,
+            Window = Hotkeys.Window,
+            FullScreen = Hotkeys.FullScreen,
+            RepeatLast = Hotkeys.RepeatLast,
+        };
+        return c;
+    }
+
     /// <summary>Последняя выделенная область в физических пикселях и конфигурация мониторов, в которой она была сделана.</summary>
     public PxRect? LastRegion { get; set; }
     public string? LastRegionLayout { get; set; }
@@ -87,6 +109,8 @@ public sealed class SettingsStore
         if (string.IsNullOrWhiteSpace(s.SaveFolder))
             s.SaveFolder = d.SaveFolder;
         s.JpegQuality = Math.Clamp(s.JpegQuality, 1, 100);
+        if (string.IsNullOrWhiteSpace(s.UpdateRepository))
+            s.UpdateRepository = AppSettings.DefaultUpdateRepository;
         return s;
     }
 

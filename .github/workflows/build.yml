@@ -20,7 +20,7 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Publish self-contained single-file exe
-        run: dotnet publish src/Shotly/Shotly.csproj -c Release -o publish
+        run: dotnet publish src/Shotly/Shotly.csproj -c Release -o publish -p:Version=0.2.${{ github.run_number }}
 
       - name: Show size
         shell: pwsh
@@ -32,17 +32,32 @@ jobs:
           path: publish/Shotly.exe
           if-no-files-found: error
 
-      # После мержа в main exe публикуется во вкладку Releases (pre-release «latest»),
-      # чтобы его можно было скачать одним кликом, без поиска артефактов.
-      - name: Publish latest pre-release
+      # После мержа в main exe публикуется как релиз v0.2.N: его можно скачать одним кликом,
+      # а встроенное обновление находит его через /releases/latest.
+      - name: Publish release
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: 0.2.${{ github.run_number }}
         run: |
           gh release delete latest --yes --cleanup-tag 2>$null
-          gh release create latest publish/Shotly.exe `
-            --prerelease `
+          gh release create "v$env:VERSION" publish/Shotly.exe `
             --target $env:GITHUB_SHA `
-            --title "Shotly — последняя сборка" `
-            --notes "Автоматическая сборка из main (коммит $env:GITHUB_SHA). Скачайте Shotly.exe ниже и запустите: установка не нужна."
+            --title "Shotly $env:VERSION" `
+            --notes "Сборка из main (коммит $env:GITHUB_SHA). Скачайте Shotly.exe ниже и запустите: установка не нужна."
+
+      # Репозиторий Shotly закрыт, а программа без токена не может читать его релизы.
+      # Если задан секрет UPDATES_TOKEN и переменная UPDATES_REPO (открытый репозиторий только для exe),
+      # тот же релиз публикуется и туда — оттуда его скачивает встроенное обновление.
+      - name: Publish to public updates repository
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.UPDATES_REPO != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.UPDATES_TOKEN }}
+          VERSION: 0.2.${{ github.run_number }}
+        run: |
+          gh release create "v$env:VERSION" publish/Shotly.exe `
+            --repo ${{ vars.UPDATES_REPO }} `
+            --title "Shotly $env:VERSION" `
+            --notes "Shotly $env:VERSION"
