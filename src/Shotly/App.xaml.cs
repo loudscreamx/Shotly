@@ -4,10 +4,12 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Shotly.Capture;
 using Shotly.Core;
+using Shotly.Editor;
 using Shotly.Tray;
 using Shotly.UI;
 
@@ -181,12 +183,15 @@ public partial class App : Application, ITrayCommands
         _settings.LastRegionLayout = snapshot.LayoutKey;
         _store.Save(_settings);
 
-        Deliver(snapshot, result.Region, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
+        var image = ImageComposer.Compose(snapshot, result.Region, result.Annotations);
+        Deliver(image, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
     }
 
-    private void Deliver(Snapshot snapshot, PxRect region, QuickAction action)
+    private void Deliver(Snapshot snapshot, PxRect region, QuickAction action) =>
+        Deliver(snapshot.Crop(region), action);
+
+    private void Deliver(BitmapSource image, QuickAction action)
     {
-        var image = snapshot.Crop(region);
 
         // Сначала сохраняем, потом копируем, и каждое действие отдельно:
         // занятый буфер обмена не должен приводить к потере снимка.
