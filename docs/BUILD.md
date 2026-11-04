@@ -3,7 +3,7 @@
 ## Готовый .exe из GitHub Actions
 
 Каждый push и pull request собирается на `windows-latest` (`.github/workflows/build.yml`).
-После каждого мержа в `main` готовый `Shotly.exe` публикуется в [Releases → latest](../../releases/tag/latest).
+После каждого мержа в `main` готовый `Shotly.exe` публикуется в [Releases → latest](https://github.com/loudscreamx/Shotly/releases/tag/latest).
 Для pull request файл лежит в артефакте **Shotly-win-x64** внизу страницы запуска во вкладке Actions (скачивается zip).
 
 ## Сборка на своём компьютере
