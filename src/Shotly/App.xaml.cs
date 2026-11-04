@@ -45,16 +45,28 @@ public partial class App : Application, ITrayCommands
             args.SetObserved();
         };
 
-        _store = new SettingsStore();
-        _settings = _store.Load();
-        _output = new OutputService(() => _settings);
-        _tray = new TrayIcon(this, _settings);
+        try
+        {
+            _store = new SettingsStore();
+            _settings = _store.Load();
+            _output = new OutputService(() => _settings);
+            _tray = new TrayIcon(this, _settings);
 
-        // Смена мониторов или масштаба во время выделения: отменяем сессию, а не рисуем по устаревшим координатам.
-        SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
+            // Смена мониторов или масштаба во время выделения: отменяем сессию, а не рисуем по устаревшим координатам.
+            SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
-        _hotkeys = new HotkeyManager();
-        RegisterHotkeys();
+            _hotkeys = new HotkeyManager();
+            RegisterHotkeys();
+        }
+        catch (Exception ex)
+        {
+            // Без трея и хоткеев процесс бесполезен и только держит мьютекс: сообщаем и выходим.
+            Log.Error("Ошибка запуска", ex);
+            MessageBox.Show("Shotly не смог запуститься:\n" + ex.Message + "\n\nПодробности в " + Log.FilePath,
+                "Shotly", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
 
         Log.Info($"Shotly {typeof(App).Assembly.GetName().Version} запущен");
     }
@@ -90,6 +102,18 @@ public partial class App : Application, ITrayCommands
     // ---- Захват ------------------------------------------------------------------------
 
     public void CaptureRegion() => RunCapture(RegionAsync);
+
+    /// <summary>
+    /// Захват из меню трея: ждём, пока меню исчезнет с экрана, иначе оно попадёт в кадр.
+    /// </summary>
+    public void FromTrayMenu(Action capture)
+    {
+        Dispatcher.InvokeAsync(async () =>
+        {
+            await Task.Delay(250);
+            capture();
+        });
+    }
 
     public void CaptureRegionDelayed(int seconds) => RunCapture(async () =>
     {
@@ -164,13 +188,33 @@ public partial class App : Application, ITrayCommands
     {
         var image = snapshot.Crop(region);
 
-        if (action is QuickAction.Copy or QuickAction.CopyAndSave)
-            _output.CopyToClipboard(image);
-
+        // Сначала сохраняем, потом копируем, и каждое действие отдельно:
+        // занятый буфер обмена не должен приводить к потере снимка.
         if (action is QuickAction.Save or QuickAction.CopyAndSave)
         {
-            var path = _output.Save(image);
-            _tray?.Notify("Снимок сохранён", path);
+            try
+            {
+                var path = _output.Save(image);
+                _tray?.Notify("Снимок сохранён", path);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Не удалось сохранить снимок", ex);
+                _tray?.Notify("Снимок не сохранён", ex.Message, error: true);
+            }
+        }
+
+        if (action is QuickAction.Copy or QuickAction.CopyAndSave)
+        {
+            try
+            {
+                _output.CopyToClipboard(image);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Не удалось скопировать в буфер обмена", ex);
+                _tray?.Notify("Буфер обмена занят", "Снимок не скопирован. " + ex.Message, error: true);
+            }
         }
     }
 
@@ -235,8 +279,16 @@ public partial class App : Application, ITrayCommands
 
     public void OpenSaveFolder()
     {
-        Directory.CreateDirectory(_settings.SaveFolder);
-        StartShell(_settings.SaveFolder);
+        try
+        {
+            Directory.CreateDirectory(_settings.SaveFolder);
+            StartShell(_settings.SaveFolder);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось открыть папку со снимками", ex);
+            _tray?.Notify("Папка недоступна", ex.Message, error: true);
+        }
     }
 
     public void OpenSettingsFile() => StartShell(_store.FilePath);
@@ -254,7 +306,7 @@ public partial class App : Application, ITrayCommands
         }
     }
 
-    public void Exit() => Shutdown();
+    void ITrayCommands.Exit() => Shutdown();
 
     private void StartShell(string path)
     {

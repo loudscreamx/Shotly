@@ -73,7 +73,14 @@ public sealed class HotkeyManager : IDisposable
                 case "win": modifiers |= NativeMethods.MOD_WIN; continue;
             }
 
-            if (!last || !Enum.TryParse<Key>(part, ignoreCase: true, out var key) || key == Key.None)
+            if (!last)
+                return false;
+
+            Key key;
+            if (part.Length == 1 && char.IsDigit(part[0]))
+                key = Key.D0 + (part[0] - '0'); // "1" → D1, а не числовое значение enum (Key.Cancel)
+            else if (int.TryParse(part, out _) || !Enum.TryParse(part, ignoreCase: true, out key)
+                     || !Enum.IsDefined(key) || key == Key.None)
                 return false;
 
             vk = (uint)KeyInterop.VirtualKeyFromKey(key);

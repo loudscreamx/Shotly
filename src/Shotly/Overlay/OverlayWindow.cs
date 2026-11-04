@@ -87,7 +87,12 @@ public sealed class OverlayWindow : Window
         PreviewKeyDown += OnKeyDown;
 
         _session.Changed += OnSessionChanged;
-        Closed += (_, _) => _session.Changed -= OnSessionChanged;
+        Closed += (_, _) =>
+        {
+            _session.Changed -= OnSessionChanged;
+            // Окно могли закрыть мимо сессии (Alt+F4) — сессия должна завершиться, иначе захват «зависнет».
+            _session.Cancel();
+        };
     }
 
     public MonitorInfo Monitor { get; }

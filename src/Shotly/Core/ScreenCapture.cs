@@ -138,7 +138,8 @@ public static class ScreenCapture
             || hwnd == NativeMethods.GetShellWindow()
             || hwnd == NativeMethods.GetDesktopWindow()
             || NativeMethods.IsIconic(hwnd)
-            || !NativeMethods.IsWindowVisible(hwnd))
+            || !NativeMethods.IsWindowVisible(hwnd)
+            || IsTaskbar(hwnd))
             return null;
 
         NativeMethods.RECT rc;
@@ -153,10 +154,21 @@ public static class ScreenCapture
         return rect.IsEmpty ? null : rect;
     }
 
+    private static bool IsTaskbar(IntPtr hwnd)
+    {
+        var name = new System.Text.StringBuilder(64);
+        NativeMethods.GetClassName(hwnd, name, name.Capacity);
+        var cls = name.ToString();
+        return cls is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd";
+    }
+
     /// <summary>Текущая позиция курсора в физических пикселях.</summary>
     public static (int X, int Y) CursorPosition()
     {
-        NativeMethods.GetCursorPos(out var p);
-        return (p.X, p.Y);
+        if (NativeMethods.GetCursorPos(out var p))
+            return (p.X, p.Y);
+
+        // Курсор недоступен (защищённый рабочий стол) — считаем, что он на основном мониторе.
+        return (0, 0);
     }
 }
