@@ -1,0 +1,6 @@
+<Application x:Class="Shotly.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             ShutdownMode="OnExplicitShutdown">
+    <!-- Окна при старте не создаются: приложение живёт в трее. -->
+</Application>
