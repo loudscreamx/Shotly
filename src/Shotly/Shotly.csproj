@@ -14,6 +14,8 @@
     <AssemblyName>Shotly</AssemblyName>
     <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- Иконка .exe, панели задач и окон. Исходники бренда: assets/brand. -->
+    <ApplicationIcon>Assets\Shotly.ico</ApplicationIcon>
     <!-- Позволяет собирать проект и на не-Windows машинах (CI, Linux). -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <SatelliteResourceLanguages>ru;en</SatelliteResourceLanguages>
@@ -34,6 +36,11 @@
     <!-- WPF не поддерживает trimming и Native AOT, поэтому они выключены. -->
     <PublishTrimmed>false</PublishTrimmed>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Та же иконка для трея: NotifyIcon берёт из .ico кадр нужного размера. -->
+    <EmbeddedResource Include="Assets\Shotly.ico" LogicalName="Shotly.ico" />
+  </ItemGroup>
 
   <ItemGroup Condition="'$(UpdateRepository)' != ''">
     <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />
