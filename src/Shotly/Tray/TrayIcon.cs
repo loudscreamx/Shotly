@@ -1,9 +1,7 @@
 using System;
 using System.Drawing;
-using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using Shotly.Core;
-using Shotly.Native;
 
 namespace Shotly.Tray;
 
@@ -125,41 +123,14 @@ public sealed class TrayIcon : IDisposable
         return item;
     }
 
-    /// <summary>Иконка рисуется в коде: синий скруглённый квадрат с белой «рамкой выделения».</summary>
+    /// <summary>Знак Shotly из встроенного .ico: Windows выбирает кадр под размер иконок трея с учётом масштаба.</summary>
     private static Icon CreateIcon()
     {
         int size = SystemInformation.SmallIconSize.Width; // учитывает масштаб основного монитора
-        using var bmp = new Bitmap(size, size);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.Clear(Color.Transparent);
-
-            float r = size * 0.25f;
-            using var path = new GraphicsPath();
-            path.AddArc(0, 0, r, r, 180, 90);
-            path.AddArc(size - r - 1, 0, r, r, 270, 90);
-            path.AddArc(size - r - 1, size - r - 1, r, r, 0, 90);
-            path.AddArc(0, size - r - 1, r, r, 90, 90);
-            path.CloseFigure();
-            using var fill = new SolidBrush(Color.FromArgb(0x3B, 0x9C, 0xFF));
-            g.FillPath(fill, path);
-
-            float inset = size * 0.25f;
-            using var pen = new Pen(Color.White, Math.Max(1f, size / 12f)) { DashStyle = DashStyle.Dash };
-            g.DrawRectangle(pen, inset, inset, size - 2 * inset - 1, size - 2 * inset - 1);
-        }
-
-        var handle = bmp.GetHicon();
-        try
-        {
-            using var temp = Icon.FromHandle(handle);
-            return (Icon)temp.Clone();
-        }
-        finally
-        {
-            NativeMethods.DestroyIcon(handle);
-        }
+        using var stream = typeof(TrayIcon).Assembly.GetManifestResourceStream("Shotly.ico");
+        if (stream is null)
+            return (Icon)SystemIcons.Application.Clone();
+        return new Icon(stream, size, size);
     }
 
     public void Dispose()
