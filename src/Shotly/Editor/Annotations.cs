@@ -168,8 +168,8 @@ public sealed class MarkerAnnotation : StrokeAnnotation
 /// <summary>Текст с тонкой контрастной обводкой, чтобы читался на любом фоне.</summary>
 public sealed class TextAnnotation : Annotation
 {
-    private static readonly Typeface Face = new(new FontFamily("Segoe UI Variable Text, Segoe UI"),
-        FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    // Фирменный Onest (встроен в exe), при сбое загрузки — Segoe UI.
+    private static readonly Typeface Face = Shotly.UI.Brand.TextFaceSemiBold;
 
     public TextAnnotation(Color color, Point origin, double fontSize) : base(color)
     {

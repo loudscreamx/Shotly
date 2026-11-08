@@ -316,6 +316,8 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         if (_busy)
             return;
         _busy = true;
+        // Уведомление прошлого снимка не должно перекрывать новое выделение (в сам снимок оно и так не попадает).
+        ToastWindow.CloseAll();
         try
         {
             await capture();
