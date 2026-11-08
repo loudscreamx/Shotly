@@ -12,7 +12,7 @@ namespace Shotly.UI;
 public enum Glyph
 {
     // Панель редактора.
-    Edit, Arrow, Rectangle, Marker, Text, Blur, BlurBrush, Pixelate, Undo, Redo, Copy, Save, Close,
+    Edit, Arrow, Rectangle, Pen, Marker, Text, TextOutline, Blur, BlurBrush, Pixelate, Undo, Redo, Copy, Save, Close,
     // Меню трея.
     Region, Window, Screen, Repeat, Timer, Folder, Settings, Update, Delete, Exit,
 }
@@ -37,6 +37,12 @@ public static class Icons
         },
         [Glyph.Arrow] = new[] { new Part("M3.5,12.5 L12,4", Thickness: 1.8), new Part("M6,3.5 H12.5 V10", Thickness: 1.8) },
         [Glyph.Rectangle] = new[] { new Part("M2.5,3.5 H13.5 V12.5 H2.5 Z") },
+        [Glyph.Pen] = new[]
+        {
+            new Part("M13.2,2.8 L7.6,8.4", Thickness: 1.8),
+            new Part("M7.9,8.1 C9.1,9.3 8.3,11.7 6.1,12.5 C4.9,12.9 3.7,12.9 2.8,12.8 C3.6,12.1 3.6,11 4.2,10 C4.9,8.9 6.7,7.1 7.9,8.1 Z", Filled: true),
+        },
+        [Glyph.TextOutline] = new[] { new Part("M3.5,3 H12.5 V6 H9.4 V13 H6.6 V6 H3.5 Z", Thickness: 1.3) },
         [Glyph.Marker] = new[]
         {
             new Part("M6.2,9.3 L11.3,4.2 L13.3,6.2 L8.2,11.3 Z"),

@@ -18,7 +18,7 @@ public abstract class Annotation
 {
     protected Annotation(Color color) => Color = color;
 
-    public Color Color { get; }
+    public Color Color { get; protected set; }
 
     /// <summary>Пустая аннотация (клик без перетаскивания, пустой текст) не попадает в историю.</summary>
     public abstract bool IsEmpty { get; }
@@ -211,6 +211,14 @@ public abstract class StrokeAnnotation : Annotation
     }
 }
 
+/// <summary>Непрозрачная кисть от руки: обычная линия выбранным цветом.</summary>
+public sealed class BrushAnnotation : StrokeAnnotation
+{
+    public BrushAnnotation(Color color, Point start, double thickness) : base(color, start, thickness) { }
+
+    public override void Render(DrawingContext dc) => RenderStroke(dc, Frozen(new SolidColorBrush(Color)));
+}
+
 /// <summary>Полупрозрачный маркер от руки.</summary>
 public sealed class MarkerAnnotation : StrokeAnnotation
 {
@@ -221,8 +229,8 @@ public sealed class MarkerAnnotation : StrokeAnnotation
 }
 
 /// <summary>
-/// Текст с тонкой контрастной обводкой, чтобы читался на любом фоне.
-/// Пока текст набирается, вокруг него рамка: за неё текст можно перетащить.
+/// Текст. По умолчанию без обводки; обводку контрастным цветом можно включить кнопкой на панели.
+/// Пока текст набирается, вокруг него рамка: за неё текст перетаскивают, а за угловые ручки меняют размер.
 /// </summary>
 public sealed class TextAnnotation : Annotation
 {
@@ -240,13 +248,18 @@ public sealed class TextAnnotation : Annotation
     public double FontSize { get; set; }
     public string Text { get; set; } = string.Empty;
 
+    /// <summary>Тонкая контрастная обводка букв, чтобы текст читался на пёстром фоне.</summary>
+    public bool Outline { get; set; }
+
+    public void Recolor(Color color) => Color = color;
+
     /// <summary>Пока текст набирается, рисуем курсор и рамку.</summary>
     public bool IsEditing { get; set; } = true;
 
     public override bool IsEmpty => string.IsNullOrWhiteSpace(Text);
 
     /// <summary>Копия для повторной правки: старая остаётся в истории без изменений, и Ctrl+Z её вернёт.</summary>
-    public TextAnnotation Clone() => new(Color, Origin, FontSize) { Text = Text, IsEditing = false };
+    public TextAnnotation Clone() => new(Color, Origin, FontSize) { Text = Text, Outline = Outline, IsEditing = false };
 
     /// <summary>Отступ рамки от букв.</summary>
     private double Padding => Math.Max(4, FontSize * 0.35);
@@ -267,6 +280,25 @@ public sealed class TextAnnotation : Annotation
 
     public bool HitTest(Point p) => Frame.Contains(p);
 
+    /// <summary>Углы рамки по порядку: левый верхний, правый верхний, левый нижний, правый нижний.</summary>
+    public static Point Corner(Rect r, int i) => i switch
+    {
+        0 => r.TopLeft,
+        1 => r.TopRight,
+        2 => r.BottomLeft,
+        _ => r.BottomRight,
+    };
+
+    /// <summary>Номер угловой ручки под точкой (0–3) или −1. <paramref name="tolerance"/> — радиус захвата в пикселях.</summary>
+    public int HandleAt(Point p, double tolerance)
+    {
+        var frame = Frame;
+        for (int i = 0; i < 4; i++)
+            if ((Corner(frame, i) - p).Length <= tolerance)
+                return i;
+        return -1;
+    }
+
     private FormattedText Format(string text) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face, FontSize,
             Brushes.Black, pixelsPerDip: 1.0);
@@ -279,11 +311,14 @@ public sealed class TextAnnotation : Annotation
         if (Text.Length > 0)
         {
             var geometry = Format(Text).BuildGeometry(Origin);
-            bool dark = Color.R * 0.299 + Color.G * 0.587 + Color.B * 0.114 < 140;
-            var outline = new Pen(Frozen(new SolidColorBrush(dark ? Colors.White : Color.FromRgb(0x1F, 0x1F, 0x1F))),
-                Math.Max(1, FontSize * 0.12)) { LineJoin = PenLineJoin.Round };
-            outline.Freeze();
-            dc.DrawGeometry(null, outline, geometry);
+            if (Outline)
+            {
+                bool dark = Color.R * 0.299 + Color.G * 0.587 + Color.B * 0.114 < 140;
+                var outline = new Pen(Frozen(new SolidColorBrush(dark ? Colors.White : Color.FromRgb(0x1F, 0x1F, 0x1F))),
+                    Math.Max(1, FontSize * 0.12)) { LineJoin = PenLineJoin.Round };
+                outline.Freeze();
+                dc.DrawGeometry(null, outline, geometry);
+            }
             dc.DrawGeometry(Frozen(new SolidColorBrush(Color)), null, geometry);
         }
 
@@ -305,6 +340,9 @@ public sealed class TextAnnotation : Annotation
     /// Пунктир Ember поверх светлой подложки: рамку видно и на тёмном, и на светлом фоне.
     /// Толщина растёт вместе с размером шрифта (а он — с масштабом монитора).
     /// </summary>
+    /// <summary>Половина стороны угловой ручки.</summary>
+    public double HandleHalf => 3.5 * Math.Max(1, FontSize / 20);
+
     private void RenderFrame(DrawingContext dc)
     {
         double k = Math.Max(1, FontSize / 20);
@@ -320,11 +358,11 @@ public sealed class TextAnnotation : Annotation
         dc.DrawRoundedRectangle(null, under, frame, 3 * k, 3 * k);
         dc.DrawRoundedRectangle(null, dashed, frame, 3 * k, 3 * k);
 
-        // Метки по углам подсказывают, что рамку можно взять и подвинуть.
+        // Ручки по углам: за них меняют размер текста.
         var fill = Frozen(new SolidColorBrush(FrameColor));
         var edge = new Pen(Brushes.White, 1 * k);
         edge.Freeze();
-        double h = 3 * k;
+        double h = HandleHalf;
         foreach (var c in new[] { frame.TopLeft, frame.TopRight, frame.BottomLeft, frame.BottomRight })
             dc.DrawRectangle(fill, edge, new Rect(c.X - h, c.Y - h, 2 * h, 2 * h));
     }
