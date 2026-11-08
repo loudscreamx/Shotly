@@ -10,12 +10,34 @@ public enum ImageFormatKind { Png, Jpg }
 /// <summary>Что делать со снимком, если мини-панель не показывается (окно, экран, повтор области).</summary>
 public enum QuickAction { Copy, Save, CopyAndSave }
 
+/// <summary>
+/// Сочетания по умолчанию собраны вокруг PrtScn. Одиночную PrtScn и Win+PrtScn оставляем Windows:
+/// первую в Windows 11 занимают «Ножницы», вторая — системный снимок экрана в «Изображения».
+/// </summary>
 public sealed class HotkeySettings
 {
-    public string Region { get; set; } = "Ctrl+Shift+S";
-    public string Window { get; set; } = "Ctrl+Shift+W";
-    public string FullScreen { get; set; } = "Ctrl+Shift+F";
-    public string RepeatLast { get; set; } = "Ctrl+Shift+R";
+    /// <summary>Номер раскладки по умолчанию. Растёт, когда меняются умолчания, чтобы перенести старые настройки.</summary>
+    public const int CurrentLayout = 2;
+
+    public string Region { get; set; } = "Ctrl+PrintScreen";
+    public string Window { get; set; } = "Alt+PrintScreen";
+    public string FullScreen { get; set; } = "Shift+PrintScreen";
+    public string RepeatLast { get; set; } = "Ctrl+Shift+PrintScreen";
+
+    /// <summary>
+    /// Раскладка, под которую записаны сочетания. В старых settings.json поля нет (0):
+    /// тогда нетронутые старые умолчания (Ctrl+Shift+S/W/F/R) меняются на новые, а свои сочетания остаются.
+    /// </summary>
+    public int Layout { get; set; }
+
+    /// <summary>Сочетания до раскладки 2.</summary>
+    internal static readonly HotkeySettings Legacy = new()
+    {
+        Region = "Ctrl+Shift+S",
+        Window = "Ctrl+Shift+W",
+        FullScreen = "Ctrl+Shift+F",
+        RepeatLast = "Ctrl+Shift+R",
+    };
 }
 
 public sealed class AppSettings
@@ -66,6 +88,7 @@ public sealed class AppSettings
             Window = Hotkeys.Window,
             FullScreen = Hotkeys.FullScreen,
             RepeatLast = Hotkeys.RepeatLast,
+            Layout = Hotkeys.Layout,
         };
         return c;
     }
@@ -101,12 +124,16 @@ public sealed class SettingsStore
             if (!File.Exists(FilePath))
             {
                 var defaults = new AppSettings();
+                defaults.Hotkeys.Layout = HotkeySettings.CurrentLayout;
                 Save(defaults);
                 return defaults;
             }
 
             var json = File.ReadAllText(FilePath);
-            return Normalize(JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings());
+            var settings = Normalize(JsonSerializer.Deserialize<AppSettings>(json, Options) ?? new AppSettings());
+            if (MigrateHotkeys(settings.Hotkeys))
+                Save(settings);
+            return settings;
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
@@ -130,6 +157,41 @@ public sealed class SettingsStore
             s.SaveFolder = d.SaveFolder;
         s.JpegQuality = Math.Clamp(s.JpegQuality, 1, 100);
         return s;
+    }
+
+    /// <summary>Переносит сочетания на текущую раскладку по умолчанию. Возвращает true, если что-то поменялось.</summary>
+    private static bool MigrateHotkeys(HotkeySettings h)
+    {
+        if (h.Layout >= HotkeySettings.CurrentLayout)
+            return false;
+
+        var old = HotkeySettings.Legacy;
+        var d = new HotkeySettings();
+        static bool same(string a, string b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+
+        // Меняем только нетронутые старые умолчания. Если новое умолчание уже занято
+        // своим сочетанием пользователя на другом действии, оставляем старое, чтобы не было дублей.
+        var current = new[] { h.Region, h.Window, h.FullScreen, h.RepeatLast };
+        var legacy = new[] { old.Region, old.Window, old.FullScreen, old.RepeatLast };
+        var next = new[] { d.Region, d.Window, d.FullScreen, d.RepeatLast };
+        var result = (string[])current.Clone();
+        for (int i = 0; i < current.Length; i++)
+        {
+            if (!same(current[i], legacy[i]))
+                continue;
+            bool taken = false;
+            for (int j = 0; j < current.Length; j++)
+                if (j != i && !same(current[j], legacy[j]) && same(current[j], next[i]))
+                    taken = true;
+            if (!taken)
+                result[i] = next[i];
+        }
+        (h.Region, h.Window, h.FullScreen, h.RepeatLast) = (result[0], result[1], result[2], result[3]);
+
+        h.Layout = HotkeySettings.CurrentLayout;
+        Log.Info($"Горячие клавиши перенесены на раскладку {HotkeySettings.CurrentLayout}: " +
+                 $"{h.Region}, {h.Window}, {h.FullScreen}, {h.RepeatLast}");
+        return true;
     }
 
     public void Save(AppSettings settings)

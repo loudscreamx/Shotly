@@ -25,7 +25,20 @@ public sealed class HotkeyBox : TextBox
         set => Text = value;
     }
 
-    protected override void OnPreviewKeyDown(KeyEventArgs e)
+    protected override void OnPreviewKeyDown(KeyEventArgs e) => Record(e);
+
+    /// <summary>
+    /// Windows не присылает окнам нажатие PrtScn, только отпускание, поэтому сочетания
+    /// с PrtScn записываем по KeyUp. Модификаторы в этот момент ещё зажаты.
+    /// </summary>
+    protected override void OnPreviewKeyUp(KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.PrintScreen)
+            Record(e);
+    }
+
+    private void Record(KeyEventArgs e)
     {
         e.Handled = true;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
@@ -59,7 +72,12 @@ public sealed class HotkeyBox : TextBox
         if (parts.Count == 0 && !standalone)
             return; // одиночная буква перехватила бы обычный набор текста во всех программах
 
-        parts.Add(key is >= Key.D0 and <= Key.D9 ? ((int)(key - Key.D0)).ToString() : key.ToString());
+        parts.Add(key switch
+        {
+            >= Key.D0 and <= Key.D9 => ((int)(key - Key.D0)).ToString(),
+            Key.PrintScreen => "PrintScreen", // у значения два имени в enum, ToString может вернуть «Snapshot»
+            _ => key.ToString(),
+        });
         var gesture = string.Join("+", parts);
         if (HotkeyManager.TryParse(gesture, out _, out _))
             Text = gesture;
