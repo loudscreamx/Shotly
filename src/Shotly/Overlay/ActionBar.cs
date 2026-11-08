@@ -1,10 +1,11 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using Shotly.Editor;
+using Shotly.UI;
 
 namespace Shotly.Overlay;
 
@@ -15,16 +16,18 @@ public enum BarCommand { Copy, Save, Cancel, Edit, Undo, Redo }
 /// после выделения — «Правка · Копировать · Сохранить · ×»;
 /// в режиме правки — инструменты, цвета, отмена/повтор и те же действия.
 /// Размеры в DIP, поэтому панель одинакова на мониторах со 100% и 200%.
+/// Оформление по брендбуку: фон Coal, выбранный инструмент — Ember, текст Onest.
 /// </summary>
 public sealed class ActionBar : Border
 {
-    private const string IconFont = "Segoe Fluent Icons, Segoe MDL2 Assets, Segoe UI Symbol";
-    private const string TextFont = "Segoe UI Variable Text, Segoe UI";
-    private static readonly Brush HoverBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF)));
-    private static readonly Brush ActiveBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x66, 0x3B, 0x9C, 0xFF)));
-    private static readonly Brush ForegroundBrush = Frozen(new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5)));
-    private static readonly Brush DisabledBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x66, 0xF5, 0xF5, 0xF5)));
-    private static readonly Brush DividerBrush = Frozen(new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF)));
+    private static readonly Brush HoverBrush = Brand.Solid(Colors.White, 0x1A);
+    private static readonly Brush ActiveBrush = Brand.EmberBrush;
+    private static readonly Brush ActiveHoverBrush = Brand.Solid(Color.FromRgb(0xFF, 0x6A, 0x33));
+    private static readonly Brush ForegroundBrush = Brand.TextBrush;
+    private static readonly Brush ActiveForegroundBrush = Brand.CoalBrush;
+    private static readonly Brush DisabledBrush = Brand.Solid(Brand.Text, 0x55);
+    private static readonly Brush DividerBrush = Brand.Solid(Colors.White, 0x24);
+    private static readonly Brush SwatchEdgeBrush = Brand.Solid(Colors.White, 0x59);
 
     private string _signature = string.Empty;
 
@@ -34,13 +37,14 @@ public sealed class ActionBar : Border
 
     public ActionBar()
     {
-        Background = Frozen(new SolidColorBrush(Color.FromArgb(0xF0, 0x1F, 0x1F, 0x1F)));
+        Background = Brand.Solid(Brand.Coal, 0xF5);
         BorderBrush = DividerBrush;
         BorderThickness = new Thickness(1);
-        CornerRadius = new CornerRadius(8);
+        CornerRadius = new CornerRadius(10);
         Padding = new Thickness(4);
         Cursor = Cursors.Arrow;
         SnapsToDevicePixels = true;
+        TextElement.SetFontFamily(this, Brand.TextFont);
 
         // Клики по панели не должны начинать новое выделение или рисование под ней.
         MouseLeftButtonDown += (_, e) => e.Handled = true;
@@ -63,48 +67,49 @@ public sealed class ActionBar : Border
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         if (editor is null)
         {
-            panel.Children.Add(Button("", "Правка", "Стрелки, рамки, текст, маркер, пикселизация и размытие (E)", BarCommand.Edit));
+            panel.Children.Add(Button(Glyph.Edit, "Правка", "Стрелки, рамки, текст, маркер, пикселизация и размытие (E)", BarCommand.Edit));
             panel.Children.Add(Divider());
         }
         else
         {
-            panel.Children.Add(Tool(Icons.Arrow(), "Стрелка (A)", EditorTool.Arrow, editor.Tool));
-            panel.Children.Add(Tool(Icons.Rectangle(), "Рамка (R)", EditorTool.Rectangle, editor.Tool));
-            panel.Children.Add(Tool(Glyph("\uE7E6", ForegroundBrush), "Маркер (M)", EditorTool.Marker, editor.Tool));
-            panel.Children.Add(Tool(Glyph("\uE8D2", ForegroundBrush), "Текст (T)", EditorTool.Text, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Arrow, "Стрелка (A)", EditorTool.Arrow, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Rectangle, "Рамка (R)", EditorTool.Rectangle, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Marker, "Маркер (M)", EditorTool.Marker, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Text, "Текст (T)", EditorTool.Text, editor.Tool));
             panel.Children.Add(Divider());
-            panel.Children.Add(Tool(Icons.Blur(), "Размытие области (B)", EditorTool.Blur, editor.Tool));
-            panel.Children.Add(Tool(Icons.BlurBrush(), "Размытие кистью (Shift+B)", EditorTool.BlurBrush, editor.Tool));
-            panel.Children.Add(Tool(Icons.Pixelate(), "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Blur, "Размытие области (B)", EditorTool.Blur, editor.Tool));
+            panel.Children.Add(Tool(Glyph.BlurBrush, "Размытие кистью (Shift+B)", EditorTool.BlurBrush, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Pixelate, "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
             panel.Children.Add(Divider());
             foreach (var color in EditorState.Palette)
                 panel.Children.Add(Swatch(color, color == editor.Color));
             panel.Children.Add(Divider());
-            panel.Children.Add(Button("", null, "Отменить (Ctrl+Z)", BarCommand.Undo, editor.CanUndo));
-            panel.Children.Add(Button("", null, "Повторить (Ctrl+Y)", BarCommand.Redo, editor.CanRedo));
+            panel.Children.Add(Button(Glyph.Undo, null, "Отменить (Ctrl+Z)", BarCommand.Undo, editor.CanUndo));
+            panel.Children.Add(Button(Glyph.Redo, null, "Повторить (Ctrl+Y)", BarCommand.Redo, editor.CanRedo));
             panel.Children.Add(Divider());
         }
 
-        panel.Children.Add(Button("", "Копировать", "Копировать в буфер (Enter, Ctrl+C)", BarCommand.Copy));
-        panel.Children.Add(Button("", "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
+        panel.Children.Add(Button(Glyph.Copy, "Копировать", "Копировать в буфер (Enter, Ctrl+C)", BarCommand.Copy));
+        panel.Children.Add(Button(Glyph.Save, "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
         panel.Children.Add(Divider());
-        panel.Children.Add(Button("", null, "Отменить снимок (Esc, а при правке — только эта кнопка)", BarCommand.Cancel));
+        panel.Children.Add(Button(Glyph.Close, null, "Отменить снимок (Esc, а при правке — только эта кнопка)", BarCommand.Cancel));
         Child = panel;
     }
 
-    private UIElement Button(string glyph, string? label, string tooltip, BarCommand command, bool enabled = true)
+    private UIElement Button(Glyph glyph, string? label, string tooltip, BarCommand command, bool enabled = true)
     {
         var content = new StackPanel { Orientation = Orientation.Horizontal };
-        content.Children.Add(Glyph(glyph, enabled ? ForegroundBrush : DisabledBrush));
+        content.Children.Add(Icons.Element(glyph, enabled ? ForegroundBrush : DisabledBrush));
         if (label is not null)
         {
             content.Children.Add(new TextBlock
             {
                 Text = label,
-                FontFamily = new FontFamily(TextFont),
-                FontSize = 12,
+                FontFamily = Brand.TextFont,
+                FontWeight = FontWeights.Medium,
+                FontSize = 12.5,
                 Foreground = ForegroundBrush,
-                Margin = new Thickness(6, 0, 0, 0),
+                Margin = new Thickness(7, 0, 1, 0),
                 VerticalAlignment = VerticalAlignment.Center,
             });
         }
@@ -112,9 +117,12 @@ public sealed class ActionBar : Border
         return Clickable(content, tooltip, active: false, enabled, () => CommandInvoked?.Invoke(command));
     }
 
-    private UIElement Tool(UIElement icon, string tooltip, EditorTool tool, EditorTool current) =>
-        Clickable(icon, tooltip, active: tool == current, enabled: true,
+    private UIElement Tool(Glyph glyph, string tooltip, EditorTool tool, EditorTool current)
+    {
+        bool active = tool == current;
+        return Clickable(Icons.Element(glyph, active ? ActiveForegroundBrush : ForegroundBrush), tooltip, active, enabled: true,
             () => ToolChosen?.Invoke(tool));
+    }
 
     private UIElement Swatch(Color color, bool active)
     {
@@ -123,28 +131,27 @@ public sealed class ActionBar : Border
             Width = 14,
             Height = 14,
             CornerRadius = new CornerRadius(7),
-            Background = Frozen(new SolidColorBrush(color)),
-            BorderBrush = active ? ForegroundBrush : DividerBrush,
+            Background = Brand.Solid(color),
+            // Тёмный цвет на тёмной панели виден только по обводке, поэтому она светлее разделителей.
+            BorderBrush = active ? ForegroundBrush : SwatchEdgeBrush,
             BorderThickness = new Thickness(active ? 2 : 1),
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var item = Clickable(dot, "Цвет", active: false, enabled: true, () => ColorChosen?.Invoke(color));
-        if (item is Border b)
-            b.Padding = new Thickness(5, 6, 5, 6);
+        // Выбранный цвет дополнительно обведён кольцом, чтобы его было видно и у тёмного, и у светлого цвета.
+        var ring = new Border
+        {
+            Width = 20,
+            Height = 20,
+            CornerRadius = new CornerRadius(10),
+            BorderBrush = active ? Brand.AmberBrush : Brushes.Transparent,
+            BorderThickness = new Thickness(1.5),
+            Child = dot,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var item = Clickable(ring, "Цвет", active: false, enabled: true, () => ColorChosen?.Invoke(color));
+        item.Padding = new Thickness(3, 5, 3, 5);
         return item;
     }
-
-    private static TextBlock Glyph(string glyph, Brush brush) => new()
-    {
-        Text = glyph,
-        FontFamily = new FontFamily(IconFont),
-        FontSize = 14,
-        Foreground = brush,
-        VerticalAlignment = VerticalAlignment.Center,
-        HorizontalAlignment = HorizontalAlignment.Center,
-        MinWidth = 14,
-        TextAlignment = TextAlignment.Center,
-    };
 
     private static UIElement Divider() => new Border
     {
@@ -159,8 +166,8 @@ public sealed class ActionBar : Border
         var item = new Border
         {
             Child = content,
-            Padding = new Thickness(9, 6, 9, 6),
-            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(9, 7, 9, 7),
+            CornerRadius = new CornerRadius(7),
             Background = idle,
             ToolTip = tooltip,
             Cursor = enabled ? Cursors.Hand : Cursors.Arrow,
@@ -168,7 +175,7 @@ public sealed class ActionBar : Border
 
         if (enabled)
         {
-            item.MouseEnter += (_, _) => item.Background = active ? ActiveBrush : HoverBrush;
+            item.MouseEnter += (_, _) => item.Background = active ? ActiveHoverBrush : HoverBrush;
             item.MouseLeave += (_, _) => item.Background = idle;
         }
 
@@ -179,78 +186,5 @@ public sealed class ActionBar : Border
                 onClick();
         };
         return item;
-    }
-
-    private static Brush Frozen(Brush brush)
-    {
-        brush.Freeze();
-        return brush;
-    }
-
-    /// <summary>
-    /// Векторные значки инструментов 16×16 DIP. Символы вроде «↗» и «▦» есть не во всех шрифтах:
-    /// Windows подставляла их из запасного шрифта мелкими и тонкими, и значки было трудно узнать.
-    /// </summary>
-    private static class Icons
-    {
-        private const double IconSize = 16;
-
-        public static UIElement Arrow() => Box(
-            Stroke("M3.5,12.5 L12,4", 1.8),
-            Stroke("M6,3.5 H12.5 V10", 1.8));
-
-        public static UIElement Rectangle() => Box(Stroke("M2.5,3.5 H13.5 V12.5 H2.5 Z", 1.5));
-
-        public static UIElement Pixelate() => Box(Fill(
-            "M2,2 h4 v4 h-4 Z M10,2 h4 v4 h-4 Z M6,6 h4 v4 h-4 Z M2,10 h4 v4 h-4 Z M10,10 h4 v4 h-4 Z"));
-
-        /// <summary>Пунктирная область с каплей внутри.</summary>
-        public static UIElement Blur()
-        {
-            var frame = Stroke("M2,2 H14 V14 H2 Z", 1.3);
-            frame.StrokeDashArray = new DoubleCollection { 2, 1.6 };
-            frame.StrokeLineJoin = PenLineJoin.Miter;
-            return Box(frame, Fill(Drop(8, 8.6, 0.62)));
-        }
-
-        /// <summary>Мазок кисти и капля.</summary>
-        public static UIElement BlurBrush() => Box(
-            Stroke("M2,13 C4,9.5 6.5,14.5 9,11.5", 2.4),
-            Fill(Drop(11, 6.5, 0.72)));
-
-        /// <summary>Капля высотой около 9 DIP с центром округлой части в (cx, cy), масштабированная k.</summary>
-        private static string Drop(double cx, double cy, double k)
-        {
-            string P(double x, double y) =>
-                $"{(cx + x * k).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(cy + y * k).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-            string r = (4 * k).ToString(System.Globalization.CultureInfo.InvariantCulture);
-            return $"M{P(0, -8)} C{P(0, -8)} {P(-4, -3)} {P(-4, 0)} A{r},{r} 0 0 0 {P(4, 0)} C{P(4, -3)} {P(0, -8)} {P(0, -8)} Z";
-        }
-
-        private static Path Stroke(string data, double thickness) => new()
-        {
-            Data = Geometry.Parse(data),
-            Stroke = ForegroundBrush,
-            StrokeThickness = thickness,
-            StrokeStartLineCap = PenLineCap.Round,
-            StrokeEndLineCap = PenLineCap.Round,
-            StrokeLineJoin = PenLineJoin.Round,
-        };
-
-        private static Path Fill(string data) => new() { Data = Geometry.Parse(data), Fill = ForegroundBrush };
-
-        private static UIElement Box(params Path[] parts)
-        {
-            var canvas = new Canvas
-            {
-                Width = IconSize,
-                Height = IconSize,
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-            };
-            foreach (var part in parts)
-                canvas.Children.Add(part);
-            return canvas;
-        }
     }
 }

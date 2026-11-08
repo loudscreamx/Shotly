@@ -3,4 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <!-- Окна при старте не создаются: приложение живёт в трее. -->
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Фирменный стиль по брендбуку: цвета Ember, шрифты Onest и Unbounded. -->
+                <ResourceDictionary Source="Themes/Shotly.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
 </Application>

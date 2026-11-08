@@ -40,6 +40,8 @@
   <ItemGroup>
     <!-- Та же иконка для трея: NotifyIcon берёт из .ico кадр нужного размера. -->
     <EmbeddedResource Include="Assets\Shotly.ico" LogicalName="Shotly.ico" />
+    <!-- Фирменные шрифты (брендбук): Onest для текста, Unbounded для заголовков. Лицензия OFL, тексты лежат рядом. -->
+    <Resource Include="Assets\Fonts\*.ttf" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UpdateRepository)' != ''">

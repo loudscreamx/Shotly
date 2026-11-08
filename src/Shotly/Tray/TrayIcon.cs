@@ -1,7 +1,9 @@
 using System;
 using System.Drawing;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Shotly.Core;
+using Shotly.UI;
 
 namespace Shotly.Tray;
 
@@ -31,36 +33,66 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _window;
     private readonly ToolStripMenuItem _full;
     private readonly ToolStripMenuItem _repeat;
+    private readonly int _iconPixels;
     private Action? _balloonAction;
 
     public TrayIcon(ITrayCommands commands, AppSettings settings)
     {
-        var menu = new ContextMenuStrip();
+        var menu = new ContextMenuStrip
+        {
+            Renderer = new TrayMenuRenderer(),
+            ShowImageMargin = true,
+            Padding = new Padding(0, 4, 0, 4),
+        };
+        // Значки рисуются вектором под масштаб основного монитора (как и иконка трея).
+        _iconPixels = SystemInformation.SmallIconSize.Width;
+        menu.ImageScalingSize = new Size(_iconPixels, _iconPixels);
+        menu.Font = TrayFonts.Menu(menu.Font);
+        menu.HandleCreated += (_, _) => RoundCorners(menu.Handle);
+
         Action later(Action a) => () => commands.FromTrayMenu(a);
-        _region = Item("Область", null, later(commands.CaptureRegion));
-        _window = Item("Активное окно", null, later(commands.CaptureWindow));
-        _full = Item("Весь экран", null, later(commands.CaptureFullScreen));
-        _repeat = Item("Повторить последнюю область", null, later(commands.RepeatLastRegion));
+
+        // Шапка: знак Orbit, название Unbounded и версия справа.
+        var header = new ToolStripMenuItem("Shotly")
+        {
+            Tag = TrayMenuRenderer.HeaderTag,
+            Image = Icons.Bitmap(Brand.Mark, _iconPixels),
+            Font = TrayFonts.Header(menu.Font),
+            ShortcutKeyDisplayString = Installation.Version,
+            Padding = new Padding(0, 3, 0, 3),
+        };
+        menu.Items.Add(header);
+        menu.Items.Add(new ToolStripSeparator());
+
+        _region = Item("Область", Glyph.Region, later(commands.CaptureRegion));
+        _window = Item("Активное окно", Glyph.Window, later(commands.CaptureWindow));
+        _full = Item("Весь экран", Glyph.Screen, later(commands.CaptureFullScreen));
+        _repeat = Item("Повторить последнюю область", Glyph.Repeat, later(commands.RepeatLastRegion));
         menu.Items.Add(_region);
         menu.Items.Add(_window);
         menu.Items.Add(_full);
         menu.Items.Add(_repeat);
 
-        var delayed = new ToolStripMenuItem("С задержкой");
+        var delayed = Item("С задержкой", Glyph.Timer, null);
+        delayed.DropDown.Renderer = menu.Renderer;
+        delayed.DropDown.Font = menu.Font;
+        delayed.DropDown.HandleCreated += (_, _) => RoundCorners(delayed.DropDown.Handle);
+        if (delayed.DropDown is ToolStripDropDownMenu dropDown)
+            dropDown.ShowImageMargin = false;
         foreach (var seconds in new[] { 3, 5, 10 })
             delayed.DropDownItems.Add(Item($"{seconds} с", null, later(() => commands.CaptureRegionDelayed(seconds))));
         menu.Items.Add(delayed);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Открыть папку со снимками", null, commands.OpenSaveFolder));
-        var settingsItem = Item("Настройки…", null, commands.OpenSettings);
-        settingsItem.Font = new Font(settingsItem.Font, FontStyle.Bold);
+        menu.Items.Add(Item("Открыть папку со снимками", Glyph.Folder, commands.OpenSaveFolder));
+        var settingsItem = Item("Настройки…", Glyph.Settings, commands.OpenSettings);
+        settingsItem.Font = TrayFonts.MenuBold(menu.Font);
         menu.Items.Add(settingsItem);
-        menu.Items.Add(Item("Проверить обновления", null, commands.CheckForUpdates));
+        menu.Items.Add(Item("Проверить обновления", Glyph.Update, commands.CheckForUpdates));
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Удалить Shotly…", null, commands.Uninstall));
-        menu.Items.Add(Item("Выход", null, commands.Exit));
+        menu.Items.Add(Item("Удалить Shotly…", Glyph.Delete, commands.Uninstall));
+        menu.Items.Add(Item("Выход", Glyph.Exit, commands.Exit));
 
         _icon = new NotifyIcon
         {
@@ -94,19 +126,23 @@ public sealed class TrayIcon : IDisposable
     }
 
     /// <summary>Уведомление, по щелчку на которое выполняется действие (например, установка обновления).</summary>
-    public void Notify(string title, string text, Action onClick)
-    {
-        Notify(title, text);
-        _balloonAction = onClick;
-    }
+    public void Notify(string title, string text, Action onClick) => Show(title, text, error: false, onClick);
 
-    public void Notify(string title, string text, bool error = false)
+    public void Notify(string title, string text, bool error = false) => Show(title, text, error, null);
+
+    /// <summary>
+    /// Фирменное уведомление Shotly; если его окно не удалось показать — системное уведомление трея.
+    /// </summary>
+    private void Show(string title, string text, bool error, Action? onClick)
     {
-        _balloonAction = null;
+        if (ToastWindow.TryShow(title, text, error, onClick))
+            return;
+
+        _balloonAction = onClick;
         try
         {
             _icon.ShowBalloonTip(3000, title, string.IsNullOrWhiteSpace(text) ? title : text,
-                error ? ToolTipIcon.Error : ToolTipIcon.Info);
+                error ? ToolTipIcon.Error : ToolTipIcon.None);
         }
         catch (Exception ex)
         {
@@ -114,14 +150,37 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
-    private static ToolStripMenuItem Item(string text, string? shortcut, Action action)
+    private ToolStripMenuItem Item(string text, Glyph? glyph, Action? action)
     {
-        var item = new ToolStripMenuItem(text);
-        if (!string.IsNullOrEmpty(shortcut))
-            item.ShortcutKeyDisplayString = shortcut;
-        item.Click += (_, _) => action();
+        var item = new ToolStripMenuItem(text)
+        {
+            Padding = new Padding(0, 3, 0, 3),
+        };
+        if (glyph is { } g)
+            item.Image = Icons.Bitmap(g, Brand.Text, _iconPixels);
+        if (action is not null)
+            item.Click += (_, _) => action();
         return item;
     }
+
+    /// <summary>Скруглённые углы меню в Windows 11 (на Windows 10 атрибут не поддерживается, вызов ничего не делает).</summary>
+    private static void RoundCorners(IntPtr hwnd)
+    {
+        try
+        {
+            int round = DWMWCP_ROUNDSMALL;
+            DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref round, sizeof(int));
+        }
+        catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+        {
+        }
+    }
+
+    private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUNDSMALL = 3;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
     /// <summary>Знак Shotly из встроенного .ico: Windows выбирает кадр под размер иконок трея с учётом масштаба.</summary>
     private static Icon CreateIcon()
@@ -135,6 +194,7 @@ public sealed class TrayIcon : IDisposable
 
     public void Dispose()
     {
+        ToastWindow.CloseAll();
         _icon.Visible = false;
         _icon.ContextMenuStrip?.Dispose();
         _icon.Icon?.Dispose();

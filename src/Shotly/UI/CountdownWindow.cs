@@ -33,19 +33,25 @@ public sealed class CountdownWindow : Window
         Left = area.Right - Width - 24;
         Top = area.Bottom - Height - 24;
 
+        // По брендбуку: круг цвета Coal, кольцо Ember сверху и Amber снизу, как половины знака, цифра Unbounded.
         _number = new TextBlock
         {
-            FontSize = 40,
-            FontWeight = FontWeights.SemiBold,
-            FontFamily = new FontFamily("Segoe UI Variable Display, Segoe UI"),
-            Foreground = Brushes.White,
+            FontSize = 36,
+            FontWeight = FontWeights.Bold,
+            FontFamily = Brand.DisplayFont,
+            Foreground = Brand.TextBrush,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 0, 3),
         };
+        var ring = new LinearGradientBrush(Brand.Ember, Brand.Amber, 90);
+        ring.Freeze();
         Content = new Border
         {
             CornerRadius = new CornerRadius(48),
-            Background = new SolidColorBrush(Color.FromArgb(0xD9, 0x1F, 0x1F, 0x1F)),
+            Background = Brand.Solid(Brand.Coal, 0xF0),
+            BorderBrush = ring,
+            BorderThickness = new Thickness(3),
             Child = _number,
         };
 
