@@ -36,6 +36,7 @@ public sealed class SettingsWindow : Window
     private readonly HotkeyBox _hkWindow = new();
     private readonly HotkeyBox _hkFull = new();
     private readonly HotkeyBox _hkRepeat = new();
+    private readonly CheckBox _copyOnSelect = new() { Content = "Сразу копировать выделенную область в буфер", Margin = new Thickness(0, 1, 0, 1) };
     private readonly CheckBox _autostart = new() { Content = "Запускать при входе в Windows", Margin = new Thickness(0, 1, 0, 1) };
     private readonly CheckBox _checkUpdates = new() { Content = "Проверять обновления при запуске", Margin = new Thickness(0, 1, 0, 1) };
     private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap, Margin = new Thickness(4, 10, 4, 0) };
@@ -81,6 +82,7 @@ public sealed class SettingsWindow : Window
         _hkWindow.Gesture = _draft.Hotkeys.Window;
         _hkFull.Gesture = _draft.Hotkeys.FullScreen;
         _hkRepeat.Gesture = _draft.Hotkeys.RepeatLast;
+        _copyOnSelect.IsChecked = _draft.CopyOnSelect;
         _autostart.IsChecked = autostart;
         _checkUpdates.IsChecked = _draft.CheckUpdates;
 
@@ -114,7 +116,8 @@ public sealed class SettingsWindow : Window
             Row("Папка", folderRow),
             Row("Формат", format),
             Row("Качество JPG", quality),
-            Row("Окно и экран", _quick, "Что делать со снимком окна, экрана и повтором области")));
+            Row("Окно и экран", _quick, "Что делать со снимком окна, экрана и повтором области"),
+            Row(string.Empty, _copyOnSelect)));
 
         body.Children.Add(Card("Горячие клавиши",
             Row("Область", _hkRegion),
@@ -325,6 +328,7 @@ public sealed class SettingsWindow : Window
         _draft.Hotkeys.FullScreen = _hkFull.Gesture;
         _draft.Hotkeys.RepeatLast = _hkRepeat.Gesture;
         _draft.CheckUpdates = _checkUpdates.IsChecked == true;
+        _draft.CopyOnSelect = _copyOnSelect.IsChecked == true;
 
         var errors = _host.Apply(_draft, _autostart.IsChecked == true);
         if (errors.Count > 0)
