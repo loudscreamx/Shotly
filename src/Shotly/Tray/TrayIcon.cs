@@ -87,10 +87,10 @@ public sealed class TrayIcon : IDisposable
     /// <summary>Подписи сочетаний в меню после изменения настроек.</summary>
     public void UpdateHotkeys(HotkeySettings h)
     {
-        _region.ShortcutKeyDisplayString = h.Region;
-        _window.ShortcutKeyDisplayString = h.Window;
-        _full.ShortcutKeyDisplayString = h.FullScreen;
-        _repeat.ShortcutKeyDisplayString = h.RepeatLast;
+        _region.ShortcutKeyDisplayString = HotkeyManager.Display(h.Region);
+        _window.ShortcutKeyDisplayString = HotkeyManager.Display(h.Window);
+        _full.ShortcutKeyDisplayString = HotkeyManager.Display(h.FullScreen);
+        _repeat.ShortcutKeyDisplayString = HotkeyManager.Display(h.RepeatLast);
     }
 
     /// <summary>Уведомление, по щелчку на которое выполняется действие (например, установка обновления).</summary>
