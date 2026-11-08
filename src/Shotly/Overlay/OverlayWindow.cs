@@ -57,7 +57,9 @@ public sealed class OverlayWindow : Window
         _bar = new ActionBar { Visibility = Visibility.Collapsed };
         _bar.CommandInvoked += OnBarCommand;
         _bar.ToolChosen += tool => _session.Edit(ed => { ed.FinishText(); ed.Tool = tool; });
-        _bar.ColorChosen += color => _session.Edit(ed => { ed.FinishText(); ed.Color = color; });
+        _bar.ColorChosen += color => _session.Edit(ed => ed.SetColor(color));
+        _bar.OutlineToggled += () => _session.Edit(ed => ed.TextOutline = !ed.TextOutline);
+        _bar.LayoutChanged += UpdateActionBar;
         _bar.ThicknessChanged += position =>
         {
             _session.Edit(ed => ed.SizePosition = position);
@@ -261,6 +263,7 @@ public sealed class OverlayWindow : Window
             Key.A => EditorTool.Arrow,
             Key.R => EditorTool.Rectangle,
             Key.M => EditorTool.Marker,
+            Key.D => EditorTool.Pen,
             Key.T => EditorTool.Text,
             Key.P => EditorTool.Pixelate,
             Key.B when shift => EditorTool.BlurBrush,
@@ -325,7 +328,10 @@ public sealed class OverlayWindow : Window
         var cursor = Cursors.Cross;
         if (editor is not null && !_bar.IsMouseOver)
         {
-            if (editor.IsTyping && editor.IsDrawing || !editor.IsDrawing && editor.TextAt(point) is not null)
+            int corner = editor.ResizingCorner >= 0 ? editor.ResizingCorner : editor.IsDrawing ? -1 : editor.TextHandleAt(point);
+            if (corner >= 0)
+                cursor = corner is 0 or 3 ? Cursors.SizeNWSE : Cursors.SizeNESW;
+            else if (editor.IsTyping && editor.IsDrawing || !editor.IsDrawing && editor.TextAt(point) is not null)
                 cursor = Cursors.SizeAll;
             else if (editor.Tool == EditorTool.Text)
                 cursor = Cursors.IBeam;

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -59,6 +60,17 @@ public sealed class ActionBar : Border
     };
     private readonly Border _sizeGroup;
 
+    // Палитра своего цвета раскрывается над рядом кнопок и тоже живёт между перестройками.
+    private readonly ColorSpectrum _spectrum = new();
+    private readonly Border _pickerRow;
+    private readonly ContentControl _toolbarRow = new() { Focusable = false };
+
+    /// <summary>Нажата кнопка «Обводка» у текста.</summary>
+    public event Action? OutlineToggled;
+
+    /// <summary>Панель изменила размер (раскрылась палитра) — её нужно заново поставить у выделения.</summary>
+    public event Action? LayoutChanged;
+
     public ActionBar()
     {
         Background = Brand.Solid(Brand.Coal, 0xF5);
@@ -94,7 +106,43 @@ public sealed class ActionBar : Border
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        _spectrum.ColorPicked += color => ColorChosen?.Invoke(color);
+        _spectrum.PickFinished += () => SetPickerOpen(false);
+        var pickerContent = new StackPanel();
+        pickerContent.Children.Add(new TextBlock
+        {
+            Text = "Свой цвет",
+            FontFamily = Brand.TextFont,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            Foreground = ForegroundBrush,
+            Margin = new Thickness(2, 0, 0, 6),
+        });
+        pickerContent.Children.Add(_spectrum);
+        _pickerRow = new Border
+        {
+            Child = pickerContent,
+            Padding = new Thickness(8, 6, 8, 8),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Visibility = Visibility.Collapsed,
+        };
+        var rows = new StackPanel();
+        rows.Children.Add(_pickerRow);
+        rows.Children.Add(_toolbarRow);
+        Child = rows;
+
         Update(null);
+    }
+
+    private bool PickerOpen => _pickerRow.Visibility == Visibility.Visible;
+
+    private void SetPickerOpen(bool open)
+    {
+        if (open == PickerOpen)
+            return;
+        _pickerRow.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        _signature = string.Empty; // перерисовать кнопку своего цвета (активна, пока палитра открыта)
+        LayoutChanged?.Invoke();
     }
 
     /// <summary>Перестраивает панель, только если что-то видимое изменилось (не на каждое движение мыши).</summary>
@@ -103,9 +151,12 @@ public sealed class ActionBar : Border
         if (editor is not null)
             SyncSize(editor);
 
+        if (editor is null && PickerOpen)
+            SetPickerOpen(false);
+
         var signature = editor is null
             ? "select"
-            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}|{editor.HasSize}";
+            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}|{editor.HasSize}|{editor.TextOutline}|{EditorState.CustomColor}|{PickerOpen}";
         if (signature == _signature)
             return;
         _signature = signature;
@@ -120,17 +171,26 @@ public sealed class ActionBar : Border
         {
             panel.Children.Add(Tool(Glyph.Arrow, "Стрелка (A). С Shift — ровный угол", EditorTool.Arrow, editor.Tool));
             panel.Children.Add(Tool(Glyph.Rectangle, "Рамка (R). С Shift — квадрат", EditorTool.Rectangle, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Marker, "Маркер (M). С Shift — прямая линия", EditorTool.Marker, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Text, "Текст (T). Текст можно перетащить за рамку", EditorTool.Text, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Pen, "Кисть (D). С Shift — прямая линия", EditorTool.Pen, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Marker, "Маркер, полупрозрачный (M). С Shift — прямая линия", EditorTool.Marker, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Text, "Текст (T). Рамку можно перетащить, а за углы — изменить размер", EditorTool.Text, editor.Tool));
             panel.Children.Add(Divider());
             panel.Children.Add(Tool(Glyph.Blur, "Размытие области (B)", EditorTool.Blur, editor.Tool));
             panel.Children.Add(Tool(Glyph.BlurBrush, "Размытие кистью (Shift+B). С Shift — прямая линия", EditorTool.BlurBrush, editor.Tool));
             panel.Children.Add(Tool(Glyph.Pixelate, "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
             panel.Children.Add(Divider());
             AddSizeControl(panel, editor);
+            if (editor.Tool == EditorTool.Text)
+            {
+                bool on = editor.TextOutline;
+                panel.Children.Add(Clickable(Icons.Element(Glyph.TextOutline, on ? ActiveForegroundBrush : ForegroundBrush),
+                    on ? "Обводка текста включена" : "Обводка текста: контрастный контур вокруг букв", on, enabled: true,
+                    () => OutlineToggled?.Invoke()));
+            }
             panel.Children.Add(Divider());
             foreach (var color in EditorState.Palette)
                 panel.Children.Add(Swatch(color, color == editor.Color));
+            panel.Children.Add(CustomSwatch(editor));
             panel.Children.Add(Divider());
             panel.Children.Add(Button(Glyph.Undo, null, "Отменить (Ctrl+Z)", BarCommand.Undo, editor.CanUndo));
             panel.Children.Add(Button(Glyph.Redo, null, "Повторить (Ctrl+Y)", BarCommand.Redo, editor.CanRedo));
@@ -141,7 +201,7 @@ public sealed class ActionBar : Border
         panel.Children.Add(Button(Glyph.Save, "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
         panel.Children.Add(Divider());
         panel.Children.Add(Button(Glyph.Close, null, "Закрыть без сохранения (Esc; если есть правки — Esc дважды)", BarCommand.Cancel));
-        Child = panel;
+        _toolbarRow.Content = panel;
     }
 
     private UIElement Button(Glyph glyph, string? label, string tooltip, BarCommand command, bool enabled = true)
@@ -199,6 +259,64 @@ public sealed class ActionBar : Border
         _sizeDot.Background = has ? Brand.Solid(editor.Color) : DisabledBrush;
         _sizeValue.Text = has ? Math.Round(editor.Size).ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
         _sizeValue.Foreground = has ? ForegroundBrush : DisabledBrush;
+    }
+
+    /// <summary>
+    /// Кнопка своего цвета: радужный кружок, а когда свой цвет уже выбран — кружок этого цвета.
+    /// Щелчок раскрывает палитру над панелью.
+    /// </summary>
+    private UIElement CustomSwatch(EditorState editor)
+    {
+        bool customActive = !EditorState.Palette.Contains(editor.Color);
+        Brush fill = EditorState.CustomColor is { } custom
+            ? Brand.Solid(custom)
+            : new LinearGradientBrush(new GradientStopCollection
+            {
+                new(Color.FromRgb(0xFF, 0x3B, 0x30), 0),
+                new(Color.FromRgb(0xFF, 0xCC, 0x00), 0.25),
+                new(Color.FromRgb(0x34, 0xC7, 0x59), 0.5),
+                new(Color.FromRgb(0x00, 0x7A, 0xFF), 0.75),
+                new(Color.FromRgb(0xAF, 0x52, 0xDE), 1),
+            }, 45);
+        var dot = new Border
+        {
+            Width = 14,
+            Height = 14,
+            CornerRadius = new CornerRadius(7),
+            Background = fill,
+            BorderBrush = customActive ? ForegroundBrush : SwatchEdgeBrush,
+            BorderThickness = new Thickness(customActive ? 2 : 1),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = EditorState.CustomColor is null ? "" : "+",
+                FontSize = 10,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brand.Solid(Colors.White, 0xE0),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, -2, 0, 0),
+            },
+        };
+        var ring = new Border
+        {
+            Width = 20,
+            Height = 20,
+            CornerRadius = new CornerRadius(10),
+            BorderBrush = customActive || PickerOpen ? Brand.AmberBrush : Brushes.Transparent,
+            BorderThickness = new Thickness(1.5),
+            Child = dot,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var item = Clickable(ring, EditorState.CustomColor is null || customActive ? "Свой цвет: открыть палитру" : "Свой цвет (щёлкните ещё раз, чтобы выбрать другой)", active: false, enabled: true, () =>
+        {
+            if (!PickerOpen && EditorState.CustomColor is { } c && !customActive)
+                ColorChosen?.Invoke(c); // повторный щелчок по уже выбранному своему цвету сначала включает его
+            else
+                SetPickerOpen(!PickerOpen);
+        });
+        item.Padding = new Thickness(3, 5, 3, 5);
+        return item;
     }
 
     private UIElement Swatch(Color color, bool active)
