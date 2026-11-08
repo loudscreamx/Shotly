@@ -16,11 +16,12 @@ public sealed class EditorState
 {
     public static readonly IReadOnlyList<Color> Palette = new[]
     {
-        Color.FromRgb(0xE5, 0x48, 0x4D), // красный
-        Color.FromRgb(0xFF, 0xC5, 0x3D), // жёлтый
+        // Первые два и тёмный — цвета палитры Ember из брендбука; зелёный и синий оставлены для разметки.
+        Color.FromRgb(0xF2, 0x54, 0x1B), // Ember, оранжево-красный (по умолчанию)
+        Color.FromRgb(0xFF, 0xB0, 0x00), // Amber, янтарный
         Color.FromRgb(0x30, 0xA4, 0x6C), // зелёный
         Color.FromRgb(0x3B, 0x9C, 0xFF), // синий
-        Color.FromRgb(0x1F, 0x1F, 0x1F), // чёрный
+        Color.FromRgb(0x1C, 0x19, 0x17), // Coal, тёплый чёрный
         Color.FromRgb(0xFF, 0xFF, 0xFF), // белый
     };
 

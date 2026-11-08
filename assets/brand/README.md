@@ -37,3 +37,10 @@
 - В самом приложении остаётся системный **Segoe UI**.
 
 Оба шрифта бесплатные (лицензия OFL), с кириллицей: https://fonts.google.com/specimen/Unbounded, https://fonts.google.com/specimen/Onest
+
+## В приложении
+
+- Цвета и шрифты для кода: `src/Shotly/UI/Brand.cs`, стили контролов: `src/Shotly/Themes/Shotly.xaml`.
+- Шрифты Onest (текст) и Unbounded (заголовки) встроены в exe из `src/Shotly/Assets/Fonts` (лицензия OFL, тексты лицензий рядом). Если шрифт не загрузится, Windows подставит Segoe UI.
+- Рамка выделения и выбранный инструмент — Ember, подсказки клавиш и кольцо выбранного цвета — Amber, панели, меню трея и уведомления — Coal.
+- Значки рисуются вектором (`src/Shotly/UI/Icons.cs`), иконочные шрифты Windows не используются.
