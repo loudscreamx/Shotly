@@ -226,7 +226,9 @@ public sealed class OverlayWindow : Window
             Key.R => EditorTool.Rectangle,
             Key.M => EditorTool.Marker,
             Key.T => EditorTool.Text,
-            Key.B => EditorTool.Pixelate,
+            Key.P => EditorTool.Pixelate,
+            Key.B when shift => EditorTool.BlurBrush,
+            Key.B => EditorTool.Blur,
             _ => null,
         };
         if (tool is { } t)

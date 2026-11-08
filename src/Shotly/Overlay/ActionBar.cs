@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Shotly.Editor;
 
 namespace Shotly.Overlay;
@@ -62,16 +63,19 @@ public sealed class ActionBar : Border
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         if (editor is null)
         {
-            panel.Children.Add(Button("", "Правка", "Стрелки, рамки, текст, маркер, пикселизация (E)", BarCommand.Edit));
+            panel.Children.Add(Button("", "Правка", "Стрелки, рамки, текст, маркер, пикселизация и размытие (E)", BarCommand.Edit));
             panel.Children.Add(Divider());
         }
         else
         {
-            panel.Children.Add(Tool("↗", "Стрелка (A)", EditorTool.Arrow, editor.Tool));
-            panel.Children.Add(Tool("▭", "Рамка (R)", EditorTool.Rectangle, editor.Tool));
-            panel.Children.Add(Tool("", "Маркер (M)", EditorTool.Marker, editor.Tool));
-            panel.Children.Add(Tool("", "Текст (T)", EditorTool.Text, editor.Tool));
-            panel.Children.Add(Tool("▦", "Пикселизация (B)", EditorTool.Pixelate, editor.Tool));
+            panel.Children.Add(Tool(Icons.Arrow(), "Стрелка (A)", EditorTool.Arrow, editor.Tool));
+            panel.Children.Add(Tool(Icons.Rectangle(), "Рамка (R)", EditorTool.Rectangle, editor.Tool));
+            panel.Children.Add(Tool(Glyph("\uE7E6", ForegroundBrush), "Маркер (M)", EditorTool.Marker, editor.Tool));
+            panel.Children.Add(Tool(Glyph("\uE8D2", ForegroundBrush), "Текст (T)", EditorTool.Text, editor.Tool));
+            panel.Children.Add(Divider());
+            panel.Children.Add(Tool(Icons.Blur(), "Размытие области (B)", EditorTool.Blur, editor.Tool));
+            panel.Children.Add(Tool(Icons.BlurBrush(), "Размытие кистью (Shift+B)", EditorTool.BlurBrush, editor.Tool));
+            panel.Children.Add(Tool(Icons.Pixelate(), "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
             panel.Children.Add(Divider());
             foreach (var color in EditorState.Palette)
                 panel.Children.Add(Swatch(color, color == editor.Color));
@@ -108,8 +112,8 @@ public sealed class ActionBar : Border
         return Clickable(content, tooltip, active: false, enabled, () => CommandInvoked?.Invoke(command));
     }
 
-    private UIElement Tool(string glyph, string tooltip, EditorTool tool, EditorTool current) =>
-        Clickable(Glyph(glyph, ForegroundBrush), tooltip, active: tool == current, enabled: true,
+    private UIElement Tool(UIElement icon, string tooltip, EditorTool tool, EditorTool current) =>
+        Clickable(icon, tooltip, active: tool == current, enabled: true,
             () => ToolChosen?.Invoke(tool));
 
     private UIElement Swatch(Color color, bool active)
@@ -181,5 +185,72 @@ public sealed class ActionBar : Border
     {
         brush.Freeze();
         return brush;
+    }
+
+    /// <summary>
+    /// Векторные значки инструментов 16×16 DIP. Символы вроде «↗» и «▦» есть не во всех шрифтах:
+    /// Windows подставляла их из запасного шрифта мелкими и тонкими, и значки было трудно узнать.
+    /// </summary>
+    private static class Icons
+    {
+        private const double IconSize = 16;
+
+        public static UIElement Arrow() => Box(
+            Stroke("M3.5,12.5 L12,4", 1.8),
+            Stroke("M6,3.5 H12.5 V10", 1.8));
+
+        public static UIElement Rectangle() => Box(Stroke("M2.5,3.5 H13.5 V12.5 H2.5 Z", 1.5));
+
+        public static UIElement Pixelate() => Box(Fill(
+            "M2,2 h4 v4 h-4 Z M10,2 h4 v4 h-4 Z M6,6 h4 v4 h-4 Z M2,10 h4 v4 h-4 Z M10,10 h4 v4 h-4 Z"));
+
+        /// <summary>Пунктирная область с каплей внутри.</summary>
+        public static UIElement Blur()
+        {
+            var frame = Stroke("M2,2 H14 V14 H2 Z", 1.3);
+            frame.StrokeDashArray = new DoubleCollection { 2, 1.6 };
+            frame.StrokeLineJoin = PenLineJoin.Miter;
+            return Box(frame, Fill(Drop(8, 8.6, 0.62)));
+        }
+
+        /// <summary>Мазок кисти и капля.</summary>
+        public static UIElement BlurBrush() => Box(
+            Stroke("M2,13 C4,9.5 6.5,14.5 9,11.5", 2.4),
+            Fill(Drop(11, 6.5, 0.72)));
+
+        /// <summary>Капля высотой около 9 DIP с центром округлой части в (cx, cy), масштабированная k.</summary>
+        private static string Drop(double cx, double cy, double k)
+        {
+            string P(double x, double y) =>
+                $"{(cx + x * k).ToString(System.Globalization.CultureInfo.InvariantCulture)},{(cy + y * k).ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            string r = (4 * k).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return $"M{P(0, -8)} C{P(0, -8)} {P(-4, -3)} {P(-4, 0)} A{r},{r} 0 0 0 {P(4, 0)} C{P(4, -3)} {P(0, -8)} {P(0, -8)} Z";
+        }
+
+        private static Path Stroke(string data, double thickness) => new()
+        {
+            Data = Geometry.Parse(data),
+            Stroke = ForegroundBrush,
+            StrokeThickness = thickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+        };
+
+        private static Path Fill(string data) => new() { Data = Geometry.Parse(data), Fill = ForegroundBrush };
+
+        private static UIElement Box(params Path[] parts)
+        {
+            var canvas = new Canvas
+            {
+                Width = IconSize,
+                Height = IconSize,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            foreach (var part in parts)
+                canvas.Children.Add(part);
+            return canvas;
+        }
     }
 }

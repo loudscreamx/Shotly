@@ -61,27 +61,34 @@ public sealed class ArrowAnnotation : DragAnnotation
             return;
 
         v /= len;
-        double head = Math.Min(len, Math.Max(Thickness * 4, 12));
-        double halfWidth = head * 0.45;
+        // Крупный наконечник с выемкой: стрелку видно сразу, даже на пёстром фоне и в уменьшенной картинке.
+        double head = Math.Min(len * 0.7, Thickness * 4 + 8);
+        double halfWidth = head * 0.5;
         var normal = new Vector(-v.Y, v.X);
         var baseCenter = End - v * head;
+        var notch = baseCenter + v * (head * 0.22);
 
         var brush = Frozen(new SolidColorBrush(Color));
         var pen = new Pen(brush, Thickness) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Flat };
         pen.Freeze();
 
-        // Линия заканчивается у основания наконечника, чтобы её конец не торчал из острия.
-        dc.DrawLine(pen, Start, baseCenter + v * 1);
+        // Линия заканчивается внутри наконечника, чтобы её конец не торчал из острия и выемки.
+        if ((notch - Start).Length > 0.5)
+            dc.DrawLine(pen, Start, notch + v * Math.Min(head * 0.2, Thickness));
 
         var tip = new StreamGeometry();
         using (var ctx = tip.Open())
         {
             ctx.BeginFigure(End, isFilled: true, isClosed: true);
             ctx.LineTo(baseCenter + normal * halfWidth, true, true);
+            ctx.LineTo(notch, true, true);
             ctx.LineTo(baseCenter - normal * halfWidth, true, true);
         }
         tip.Freeze();
-        dc.DrawGeometry(brush, null, tip);
+        // Тонкая обводка тем же цветом слегка скругляет углы наконечника.
+        var soft = new Pen(brush, Math.Max(1, Thickness * 0.35)) { LineJoin = PenLineJoin.Round };
+        soft.Freeze();
+        dc.DrawGeometry(brush, soft, tip);
     }
 }
 
@@ -99,12 +106,12 @@ public sealed class RectAnnotation : DragAnnotation
     }
 }
 
-/// <summary>Полупрозрачный маркер от руки.</summary>
-public sealed class MarkerAnnotation : Annotation
+/// <summary>Штрих от руки: копит точки и строит из них одну линию.</summary>
+public abstract class StrokeAnnotation : Annotation
 {
     private readonly List<Point> _points = new();
 
-    public MarkerAnnotation(Color color, Point start, double thickness) : base(color)
+    protected StrokeAnnotation(Color color, Point start, double thickness) : base(color)
     {
         Thickness = thickness;
         _points.Add(start);
@@ -112,7 +119,7 @@ public sealed class MarkerAnnotation : Annotation
 
     public double Thickness { get; }
 
-    public override bool IsEmpty => false; // даже точка маркером — осознанное действие
+    public override bool IsEmpty => false; // даже точка — осознанное действие
 
     public void Add(Point p)
     {
@@ -121,10 +128,13 @@ public sealed class MarkerAnnotation : Annotation
             _points.Add(p);
     }
 
-    public override void Render(DrawingContext dc)
+    /// <summary>
+    /// Рисует весь штрих одной геометрией: самопересечения не темнеют (маркер)
+    /// и не дают швов (кисть размытия).
+    /// </summary>
+    protected void RenderStroke(DrawingContext dc, Brush brush)
     {
-        var color = Color.FromArgb(0x70, Color.R, Color.G, Color.B);
-        var pen = new Pen(Frozen(new SolidColorBrush(color)), Thickness)
+        var pen = new Pen(brush, Thickness)
         {
             StartLineCap = PenLineCap.Round,
             EndLineCap = PenLineCap.Round,
@@ -142,9 +152,17 @@ public sealed class MarkerAnnotation : Annotation
                 ctx.PolyLineTo(_points.Skip(1).ToList(), true, true);
         }
         geometry.Freeze();
-        // Одна геометрия целиком: самопересечения не темнеют, как у настоящего маркера.
         dc.DrawGeometry(null, pen, geometry);
     }
+}
+
+/// <summary>Полупрозрачный маркер от руки.</summary>
+public sealed class MarkerAnnotation : StrokeAnnotation
+{
+    public MarkerAnnotation(Color color, Point start, double thickness) : base(color, start, thickness) { }
+
+    public override void Render(DrawingContext dc) =>
+        RenderStroke(dc, Frozen(new SolidColorBrush(Color.FromArgb(0x70, Color.R, Color.G, Color.B))));
 }
 
 /// <summary>Текст с тонкой контрастной обводкой, чтобы читался на любом фоне.</summary>
@@ -269,4 +287,30 @@ public sealed class PixelateAnnotation : DragAnnotation
         group.Freeze();
         dc.DrawDrawing(group);
     }
+}
+
+/// <summary>
+/// Размытие прямоугольной областью. Сама размытая картинка общая для всей правки (<see cref="BlurLayer"/>),
+/// аннотация только показывает её кусок, поэтому тянуть область мышью дёшево.
+/// </summary>
+public sealed class BlurAnnotation : DragAnnotation
+{
+    private readonly Brush _layer;
+
+    public BlurAnnotation(Brush layer, Point start) : base(Colors.Transparent, start, 0) => _layer = layer;
+
+    public override bool IsEmpty => Math.Abs(End.X - Start.X) < 3 || Math.Abs(End.Y - Start.Y) < 3;
+
+    public override void Render(DrawingContext dc) => dc.DrawRectangle(_layer, null, new Rect(Start, End));
+}
+
+/// <summary>Размытие кистью: штрих, закрашенный той же размытой картинкой.</summary>
+public sealed class BlurBrushAnnotation : StrokeAnnotation
+{
+    private readonly Brush _layer;
+
+    public BlurBrushAnnotation(Brush layer, Point start, double thickness)
+        : base(Colors.Transparent, start, thickness) => _layer = layer;
+
+    public override void Render(DrawingContext dc) => RenderStroke(dc, _layer);
 }
