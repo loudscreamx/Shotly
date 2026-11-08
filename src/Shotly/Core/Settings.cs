@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -49,6 +50,9 @@ public sealed class AppSettings
     public int JpegQuality { get; set; } = 90;
     public QuickAction QuickAction { get; set; } = QuickAction.CopyAndSave;
     public HotkeySettings Hotkeys { get; set; } = new();
+
+    /// <summary>Размеры инструментов редактора (ступень 0–4 по имени инструмента): запоминаются между снимками.</summary>
+    public Dictionary<string, int> EditorSizes { get; set; } = new();
 
     /// <summary>Проверять обновления при запуске (один запрос к GitHub, без фоновых таймеров).</summary>
     public bool CheckUpdates { get; set; } = true;
@@ -149,6 +153,7 @@ public sealed class SettingsStore
     {
         var d = new AppSettings();
         s.Hotkeys ??= new HotkeySettings();
+        s.EditorSizes ??= new Dictionary<string, int>();
         s.Hotkeys.Region ??= d.Hotkeys.Region;
         s.Hotkeys.Window ??= d.Hotkeys.Window;
         s.Hotkeys.FullScreen ??= d.Hotkeys.FullScreen;
