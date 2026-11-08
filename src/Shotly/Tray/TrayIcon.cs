@@ -1,5 +1,7 @@
 using System;
 using System.Drawing;
+using System.Threading;
+using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Shotly.Core;
@@ -29,6 +31,7 @@ public interface ITrayCommands
 public sealed class TrayIcon : IDisposable
 {
     private readonly NotifyIcon _icon;
+    private readonly SynchronizationContext? _ui = SynchronizationContext.Current;
     private readonly ToolStripMenuItem _region;
     private readonly ToolStripMenuItem _window;
     private readonly ToolStripMenuItem _full;
@@ -114,6 +117,33 @@ public sealed class TrayIcon : IDisposable
         };
 
         UpdateHotkeys(settings.Hotkeys);
+
+        // Тема панели задач и масштаб могут поменяться на ходу — перерисовываем значок.
+        SystemEvents.UserPreferenceChanged += OnSystemChanged;
+        SystemEvents.DisplaySettingsChanged += OnSystemChanged;
+    }
+
+    private void OnSystemChanged(object? sender, EventArgs e)
+    {
+        // SystemEvents вызывает обработчик в своём потоке — возвращаемся в UI-поток.
+        if (_ui is not null)
+            _ui.Post(_ => RefreshIcon(), null);
+        else
+            RefreshIcon();
+    }
+
+    private void RefreshIcon()
+    {
+        try
+        {
+            var old = _icon.Icon;
+            _icon.Icon = CreateIcon();
+            old?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось обновить значок в трее", ex);
+        }
     }
 
     /// <summary>Подписи сочетаний в меню после изменения настроек.</summary>
@@ -182,18 +212,40 @@ public sealed class TrayIcon : IDisposable
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
-    /// <summary>Знак Shotly из встроенного .ico: Windows выбирает кадр под размер иконок трея с учётом масштаба.</summary>
+    /// <summary>
+    /// Трей-глиф Shotly: отдельный упрощённый знак на всё поле, кадры 16–64 px отрисованы
+    /// под каждый размер. Цвета подобраны под тёмную или светлую панель задач.
+    /// </summary>
     private static Icon CreateIcon()
     {
         int size = SystemInformation.SmallIconSize.Width; // учитывает масштаб основного монитора
-        using var stream = typeof(TrayIcon).Assembly.GetManifestResourceStream("Shotly.ico");
+        string name = TaskbarIsLight() ? "TrayLight.ico" : "TrayDark.ico";
+        using var stream = typeof(TrayIcon).Assembly.GetManifestResourceStream(name)
+            ?? typeof(TrayIcon).Assembly.GetManifestResourceStream("Shotly.ico");
         if (stream is null)
             return (Icon)SystemIcons.Application.Clone();
         return new Icon(stream, size, size);
     }
 
+    /// <summary>Светлая ли панель задач (Параметры → Персонализация → Цвета → режим Windows).</summary>
+    private static bool TaskbarIsLight()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("SystemUsesLightTheme") is int v && v != 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось прочитать тему Windows", ex);
+            return false; // по умолчанию в Windows 10/11 панель тёмная
+        }
+    }
+
     public void Dispose()
     {
+        SystemEvents.UserPreferenceChanged -= OnSystemChanged;
+        SystemEvents.DisplaySettingsChanged -= OnSystemChanged;
         ToastWindow.CloseAll();
         _icon.Visible = false;
         _icon.ContextMenuStrip?.Dispose();
