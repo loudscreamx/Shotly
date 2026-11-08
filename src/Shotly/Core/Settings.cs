@@ -57,8 +57,8 @@ public sealed class AppSettings
     public bool CopyOnSelect { get; set; } = true;
     public HotkeySettings Hotkeys { get; set; } = new();
 
-    /// <summary>Размеры инструментов редактора (ступень 0–4 по имени инструмента): запоминаются между снимками.</summary>
-    public Dictionary<string, int> EditorSizes { get; set; } = new();
+    /// <summary>Толщина инструментов редактора в DIP по имени инструмента: запоминается между снимками.</summary>
+    public Dictionary<string, double> EditorThickness { get; set; } = new();
 
     /// <summary>Проверять обновления при запуске (один запрос к GitHub, без фоновых таймеров).</summary>
     public bool CheckUpdates { get; set; } = true;
@@ -159,7 +159,7 @@ public sealed class SettingsStore
     {
         var d = new AppSettings();
         s.Hotkeys ??= new HotkeySettings();
-        s.EditorSizes ??= new Dictionary<string, int>();
+        s.EditorThickness ??= new Dictionary<string, double>();
         s.Hotkeys.Region ??= d.Hotkeys.Region;
         s.Hotkeys.Window ??= d.Hotkeys.Window;
         s.Hotkeys.FullScreen ??= d.Hotkeys.FullScreen;

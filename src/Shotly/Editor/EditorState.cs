@@ -26,19 +26,22 @@ public sealed class EditorState
         Color.FromRgb(0xFF, 0xFF, 0xFF), // белый
     };
 
-    /// <summary>Толщины на каждый инструмент по ступеням размера (в DIP при 100%, дальше растут с DPI).</summary>
-    private static readonly Dictionary<EditorTool, double[]> Sizes = new()
+    /// <summary>
+    /// Толщина каждого инструмента: от, по умолчанию, до (в DIP при 100%, дальше растёт с DPI).
+    /// Ползунок идёт по логарифмической шкале: тонкие линии настраиваются так же точно, как толстые.
+    /// </summary>
+    private static readonly Dictionary<EditorTool, (double Min, double Default, double Max)> Ranges = new()
     {
-        [EditorTool.Arrow] = new[] { 2.0, 3.5, 5, 8, 12 },
-        [EditorTool.Rectangle] = new[] { 1.5, 2, 3, 5, 8 },
-        [EditorTool.Marker] = new[] { 8.0, 12, 18, 28, 40 },
-        [EditorTool.Text] = new[] { 12.0, 16, 20, 28, 40 },
-        [EditorTool.Pixelate] = new[] { 5.0, 7, 10, 15, 22 },
-        [EditorTool.BlurBrush] = new[] { 14.0, 22, 32, 48, 72 },
+        [EditorTool.Arrow] = (1.5, 5, 18),
+        [EditorTool.Rectangle] = (1, 3, 14),
+        [EditorTool.Marker] = (4, 18, 64),
+        [EditorTool.Text] = (10, 20, 80),
+        [EditorTool.Pixelate] = (4, 10, 32),
+        [EditorTool.BlurBrush] = (8, 32, 110),
     };
 
-    public const int SizeLevels = 5;
-    private const int DefaultLevel = 2;
+    /// <summary>Шаг колеса мыши и клавиш [ ]: на 12% толще или тоньше.</summary>
+    private const double StepFactor = 1.12;
 
     private List<Annotation> _items = new();
     private readonly Stack<Annotation[]> _undo = new();
@@ -46,7 +49,7 @@ public sealed class EditorState
     private readonly Snapshot _snapshot;
     private readonly PxRect _bounds;
     private readonly double _scale;
-    private readonly IDictionary<string, int> _levels;
+    private readonly IDictionary<string, double> _sizes;
     private Brush? _blurLayer;
 
     // Повторная правка уже готового текста: список до неё (для Ctrl+Z) и место текста в списке.
@@ -59,13 +62,13 @@ public sealed class EditorState
     private Point _moveOrigin;
 
     /// <param name="scale">Масштаб монитора с выделением: толщины линий и размер текста растут вместе с DPI.</param>
-    /// <param name="levels">Выбранные размеры по инструментам; общий словарь из настроек, поэтому запоминаются между снимками.</param>
-    public EditorState(Snapshot snapshot, PxRect bounds, double scale, IDictionary<string, int>? levels = null)
+    /// <param name="sizes">Выбранные толщины по инструментам (DIP); общий словарь из настроек, поэтому запоминаются между снимками.</param>
+    public EditorState(Snapshot snapshot, PxRect bounds, double scale, IDictionary<string, double>? sizes = null)
     {
         _snapshot = snapshot;
         _bounds = bounds;
         _scale = Math.Max(1, scale);
-        _levels = levels ?? new Dictionary<string, int>();
+        _sizes = sizes ?? new Dictionary<string, double>();
     }
 
     public EditorTool Tool { get; set; } = EditorTool.Arrow;
@@ -83,10 +86,27 @@ public sealed class EditorState
     public bool IsDrawing => Active is not null and not TextAnnotation || _movingText;
 
     /// <summary>Есть ли у инструмента размер (у размытия области его нет: сила размытия общая).</summary>
-    public bool HasSize => Sizes.ContainsKey(Tool);
+    public bool HasSize => Ranges.ContainsKey(Tool);
 
-    /// <summary>Ступень размера текущего инструмента, от 0 до <see cref="SizeLevels"/> − 1.</summary>
-    public int SizeLevel => LevelOf(Tool);
+    /// <summary>Толщина текущего инструмента в DIP (для подписи на панели).</summary>
+    public double Size => HasSize ? DipOf(Tool) : 0;
+
+    /// <summary>Положение ползунка текущего инструмента, от 0 до 1.</summary>
+    public double SizePosition
+    {
+        get
+        {
+            if (!Ranges.TryGetValue(Tool, out var r))
+                return 0;
+            return Math.Log(DipOf(Tool) / r.Min) / Math.Log(r.Max / r.Min);
+        }
+        set
+        {
+            if (!Ranges.TryGetValue(Tool, out var r))
+                return;
+            SetDip(r.Min * Math.Pow(r.Max / r.Min, Math.Clamp(value, 0, 1)));
+        }
+    }
 
     /// <summary>Толщина кисти текущего инструмента в физических пикселях (для круга-предпросмотра у курсора).</summary>
     public double BrushDiameter => Tool is EditorTool.Marker or EditorTool.BlurBrush ? SizeOf(Tool) : 0;
@@ -103,20 +123,27 @@ public sealed class EditorState
         }
     }
 
-    private int LevelOf(EditorTool tool) =>
-        _levels.TryGetValue(tool.ToString(), out var l) ? Math.Clamp(l, 0, SizeLevels - 1) : DefaultLevel;
+    private double DipOf(EditorTool tool)
+    {
+        var r = Ranges[tool];
+        return _sizes.TryGetValue(tool.ToString(), out var v) && double.IsFinite(v) ? Math.Clamp(v, r.Min, r.Max) : r.Default;
+    }
 
-    private double SizeOf(EditorTool tool) =>
-        Sizes.TryGetValue(tool, out var steps) ? steps[LevelOf(tool)] * _scale : 0;
+    private double SizeOf(EditorTool tool) => Ranges.ContainsKey(tool) ? DipOf(tool) * _scale : 0;
 
-    /// <summary>Сделать тоньше (−1) или толще (+1). Размер набираемого текста меняется сразу.</summary>
+    private void SetDip(double dip)
+    {
+        var r = Ranges[Tool];
+        _sizes[Tool.ToString()] = Math.Round(Math.Clamp(dip, r.Min, r.Max), 1);
+        if (Tool == EditorTool.Text && Active is TextAnnotation t)
+            t.FontSize = SizeOf(EditorTool.Text); // размер набираемого текста меняется сразу
+    }
+
+    /// <summary>Колесо мыши и [ ]: тоньше (−1) или толще (+1).</summary>
     public void StepSize(int delta)
     {
-        if (!HasSize)
-            return;
-        _levels[Tool.ToString()] = Math.Clamp(SizeLevel + delta, 0, SizeLevels - 1);
-        if (Tool == EditorTool.Text && Active is TextAnnotation t)
-            t.FontSize = SizeOf(EditorTool.Text);
+        if (HasSize)
+            SetDip(DipOf(Tool) * Math.Pow(StepFactor, delta));
     }
 
     /// <summary>Текст под точкой: сначала набираемый, потом готовые (верхний — последний нарисованный).</summary>

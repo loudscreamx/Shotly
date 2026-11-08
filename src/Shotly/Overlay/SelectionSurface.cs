@@ -107,6 +107,9 @@ public sealed class SelectionSurface : FrameworkElement
             if (_session.Editor is { } editor && !visible.IsEmpty)
                 DrawAnnotations(dc, editor, visible);
 
+            if (_session.CloseArmed && Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
+                DrawCloseHint(dc, w);
+
             // Размер подписываем только на мониторе с левым верхним углом выделения; в режиме правки он не нужен.
             if (_session.State != SelectionState.Editing
                 && Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
@@ -196,6 +199,20 @@ public sealed class SelectionSurface : FrameworkElement
         dc.DrawText(text, new Point(x + 9, y + 4));
         if (copied is not null)
             dc.DrawText(copied, new Point(x + 9 + text.WidthIncludingTrailingWhitespace, y + 4));
+    }
+
+    /// <summary>Подсказка после первого Esc при правках: что второй Esc закроет снимок без сохранения.</summary>
+    private void DrawCloseHint(DrawingContext dc, double w)
+    {
+        const double padX = 16, padY = 10;
+        var key = Text("Esc", 14, KeyBrush, Brand.TextFaceSemiBold);
+        var rest = Text(" ещё раз — закрыть без сохранения", 14, TextBrush, Brand.TextFace);
+        double textWidth = key.WidthIncludingTrailingWhitespace + rest.WidthIncludingTrailingWhitespace;
+        var pill = new Size(textWidth + 2 * padX, Math.Max(key.Height, rest.Height) + 2 * padY);
+        var origin = new Point(Math.Round((w - pill.Width) / 2), 24);
+        dc.DrawRoundedRectangle(PillBrush, AccentPen, new Rect(origin, pill), pill.Height / 2, pill.Height / 2);
+        dc.DrawText(key, new Point(origin.X + padX, origin.Y + padY));
+        dc.DrawText(rest, new Point(origin.X + padX + key.WidthIncludingTrailingWhitespace, origin.Y + padY));
     }
 
     private void DrawCrosshair(DrawingContext dc, double w, double h)
