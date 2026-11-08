@@ -58,7 +58,11 @@ public sealed class OverlayWindow : Window
         _bar.CommandInvoked += OnBarCommand;
         _bar.ToolChosen += tool => _session.Edit(ed => { ed.FinishText(); ed.Tool = tool; });
         _bar.ColorChosen += color => _session.Edit(ed => { ed.FinishText(); ed.Color = color; });
-        _bar.SizeStepped += StepSize;
+        _bar.ThicknessChanged += position =>
+        {
+            _session.Edit(ed => ed.SizePosition = position);
+            UpdatePointer();
+        };
         _brushRing = CreateBrushRing();
 
         var layer = new Canvas();
@@ -271,11 +275,10 @@ public sealed class OverlayWindow : Window
 
         switch (key)
         {
-            // Esc отменяет только незаконченную фигуру. Если правки уже есть, снимок отменяется кнопкой ×,
-            // чтобы случайный Esc не выбросил всю работу.
+            // Esc с зажатой мышью отменяет только незаконченную фигуру. Иначе закрывает снимок:
+            // если правки уже есть — после второго нажатия, чтобы случайный Esc не выбросил работу.
             case Key.Escape when editor.IsDrawing: _session.Edit(ed => ed.CancelActive()); return true;
-            case Key.Escape when editor.Items.Count == 0: _session.Cancel(); return true;
-            case Key.Escape: return true;
+            case Key.Escape: _session.RequestCloseByEsc(); return true;
             case Key.Enter: _session.Complete(CaptureAction.Copy); return true;
             case Key.OemOpenBrackets or Key.OemMinus or Key.Subtract: StepSize(-1); return true;
             case Key.OemCloseBrackets or Key.OemPlus or Key.Add: StepSize(1); return true;

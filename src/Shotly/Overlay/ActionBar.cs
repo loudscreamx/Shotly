@@ -35,8 +35,29 @@ public sealed class ActionBar : Border
     public event Action<EditorTool>? ToolChosen;
     public event Action<Color>? ColorChosen;
 
-    /// <summary>Тоньше (−1) или толще (+1).</summary>
-    public event Action<int>? SizeStepped;
+    /// <summary>Ползунок толщины передвинут (положение от 0 до 1).</summary>
+    public event Action<double>? ThicknessChanged;
+
+    // Блок толщины живёт дольше одной перестройки панели: иначе перестройка во время перетаскивания
+    // отбирала бы у ползунка мышь. Значение и цвет обновляются на месте.
+    private readonly ThicknessSlider _slider = new();
+    private readonly Border _sizeDot = new()
+    {
+        CornerRadius = new CornerRadius(9),
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+        BorderThickness = new Thickness(1),
+    };
+    private readonly TextBlock _sizeValue = new()
+    {
+        Width = 24,
+        FontSize = 12,
+        FontWeight = FontWeights.SemiBold,
+        TextAlignment = TextAlignment.Right,
+        VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(0, 0, 4, 0),
+    };
+    private readonly Border _sizeGroup;
 
     public ActionBar()
     {
@@ -54,15 +75,37 @@ public sealed class ActionBar : Border
         MouseLeftButtonUp += (_, e) => e.Handled = true;
         MouseRightButtonUp += (_, e) => e.Handled = true;
 
+        _slider.ValueChanged += v => ThicknessChanged?.Invoke(v);
+        _sizeValue.FontFamily = Brand.TextFont;
+        _sizeValue.Foreground = ForegroundBrush;
+        _sizeDot.BorderBrush = SwatchEdgeBrush;
+        var sizeContent = new StackPanel { Orientation = Orientation.Horizontal };
+        sizeContent.Children.Add(new Border { Width = 22, Height = 22, Child = _sizeDot, Margin = new Thickness(4, 0, 2, 0) });
+        sizeContent.Children.Add(_slider);
+        sizeContent.Children.Add(_sizeValue);
+        // Своя светлая подложка выделяет ползунок среди значков, чтобы его было видно сразу.
+        _sizeGroup = new Border
+        {
+            Child = sizeContent,
+            Background = Brand.Solid(Colors.White, 0x12),
+            CornerRadius = new CornerRadius(7),
+            Margin = new Thickness(2, 3, 2, 3),
+            Padding = new Thickness(2, 0, 2, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
         Update(null);
     }
 
     /// <summary>Перестраивает панель, только если что-то видимое изменилось (не на каждое движение мыши).</summary>
     public void Update(EditorState? editor)
     {
+        if (editor is not null)
+            SyncSize(editor);
+
         var signature = editor is null
             ? "select"
-            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}|{editor.HasSize}|{editor.SizeLevel}";
+            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}|{editor.HasSize}";
         if (signature == _signature)
             return;
         _signature = signature;
@@ -97,7 +140,7 @@ public sealed class ActionBar : Border
         panel.Children.Add(Button(Glyph.Copy, "Копировать", "Копировать в буфер (Enter, Ctrl+C)", BarCommand.Copy));
         panel.Children.Add(Button(Glyph.Save, "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
         panel.Children.Add(Divider());
-        panel.Children.Add(Button(Glyph.Close, null, "Закрыть (Esc, а при правке — только эта кнопка)", BarCommand.Cancel));
+        panel.Children.Add(Button(Glyph.Close, null, "Закрыть без сохранения (Esc; если есть правки — Esc дважды)", BarCommand.Cancel));
         Child = panel;
     }
 
@@ -129,50 +172,33 @@ public sealed class ActionBar : Border
             () => ToolChosen?.Invoke(tool));
     }
 
-    /// <summary>
-    /// «− ● +»: точка показывает выбранную толщину в текущем цвете.
-    /// У размытия области размера нет, но место под регулятор остаётся, чтобы панель не прыгала.
-    /// </summary>
+    /// <summary>Ставит на панель блок толщины: кружок-предпросмотр, ползунок и число.</summary>
     private void AddSizeControl(Panel panel, EditorState editor)
     {
-        bool has = editor.HasSize;
-        int level = editor.SizeLevel;
-        bool text = editor.Tool == EditorTool.Text;
-        const string keys = " ([ ] или колесо мыши)";
-
-        bool canLess = has && level > 0;
-        panel.Children.Add(Compact(Clickable(Icons.Element(Glyph.Minus, canLess ? ForegroundBrush : DisabledBrush),
-            text ? "Текст мельче" + keys : "Тоньше" + keys, active: false, canLess, () => SizeStepped?.Invoke(-1))));
-
-        double d = 4 + level * 2.5; // 4…14 DIP
-        var dot = new Border
-        {
-            Width = d,
-            Height = d,
-            CornerRadius = new CornerRadius(d / 2),
-            Background = has ? Brand.Solid(editor.Color) : DisabledBrush,
-            BorderBrush = SwatchEdgeBrush,
-            BorderThickness = new Thickness(1),
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        panel.Children.Add(new Border
-        {
-            Width = 18,
-            Background = Brushes.Transparent,
-            Child = dot,
-            ToolTip = has ? (text ? "Размер текста" : "Толщина") + $": {level + 1} из {EditorState.SizeLevels}" : "У размытия области размер не меняется",
-        });
-
-        bool canMore = has && level < EditorState.SizeLevels - 1;
-        panel.Children.Add(Compact(Clickable(Icons.Element(Glyph.Plus, canMore ? ForegroundBrush : DisabledBrush),
-            text ? "Текст крупнее" + keys : "Толще" + keys, active: false, canMore, () => SizeStepped?.Invoke(1))));
+        if (_sizeGroup.Parent is Panel old)
+            old.Children.Remove(_sizeGroup);
+        _sizeGroup.ToolTip = !editor.HasSize
+            ? "У размытия области толщина не меняется"
+            : editor.Tool == EditorTool.Text
+                ? "Размер текста: перетащите ползунок, колесо мыши или [ ]"
+                : "Толщина: перетащите ползунок, колесо мыши или [ ]";
+        panel.Children.Add(_sizeGroup);
     }
 
-    private static Border Compact(Border item)
+    /// <summary>Значение, цвет и число без перестройки панели (вызывается на каждое изменение редактора).</summary>
+    private void SyncSize(EditorState editor)
     {
-        item.Padding = new Thickness(5, 7, 5, 7);
-        return item;
+        bool has = editor.HasSize;
+        _slider.Active = has;
+        if (!_slider.IsMouseCaptured)
+            _slider.Value = editor.SizePosition;
+
+        double d = has ? 4 + 14 * editor.SizePosition : 4; // 4…18 DIP
+        _sizeDot.Width = _sizeDot.Height = d;
+        _sizeDot.CornerRadius = new CornerRadius(d / 2);
+        _sizeDot.Background = has ? Brand.Solid(editor.Color) : DisabledBrush;
+        _sizeValue.Text = has ? Math.Round(editor.Size).ToString(System.Globalization.CultureInfo.InvariantCulture) : "—";
+        _sizeValue.Foreground = has ? ForegroundBrush : DisabledBrush;
     }
 
     private UIElement Swatch(Color color, bool active)
