@@ -6,7 +6,7 @@ using Shotly.Core;
 
 namespace Shotly.Editor;
 
-public enum EditorTool { Arrow, Rectangle, Marker, Text, Pixelate }
+public enum EditorTool { Arrow, Rectangle, Marker, Text, Pixelate, Blur, BlurBrush }
 
 /// <summary>
 /// Состояние редактора внутри одной сессии захвата: инструмент, цвет, список аннотаций, undo/redo.
@@ -29,6 +29,7 @@ public sealed class EditorState
     private readonly Snapshot _snapshot;
     private readonly PxRect _bounds;
     private readonly double _scale;
+    private Brush? _blurLayer;
 
     /// <param name="scale">Масштаб монитора с выделением: толщины линий и размер текста растут вместе с DPI.</param>
     public EditorState(Snapshot snapshot, PxRect bounds, double scale)
@@ -69,11 +70,13 @@ public sealed class EditorState
 
         Active = Tool switch
         {
-            EditorTool.Arrow => new ArrowAnnotation(Color, p, 4 * _scale),
+            EditorTool.Arrow => new ArrowAnnotation(Color, p, 5 * _scale),
             EditorTool.Rectangle => new RectAnnotation(Color, p, 3 * _scale),
             EditorTool.Marker => new MarkerAnnotation(Color, p, 18 * _scale),
             EditorTool.Text => new TextAnnotation(Color, p, 20 * _scale),
             EditorTool.Pixelate => new PixelateAnnotation(_snapshot, p, 10 * _scale),
+            EditorTool.Blur => new BlurAnnotation(BlurFill(), p),
+            EditorTool.BlurBrush => new BlurBrushAnnotation(BlurFill(), p, 32 * _scale),
             _ => null,
         };
     }
@@ -84,7 +87,7 @@ public sealed class EditorState
         switch (Active)
         {
             case DragAnnotation drag: drag.End = p; break;
-            case MarkerAnnotation marker: marker.Add(p); break;
+            case StrokeAnnotation stroke: stroke.Add(p); break;
         }
     }
 
@@ -179,6 +182,9 @@ public sealed class EditorState
         _items.Add(a);
         _redo.Clear();
     }
+
+    /// <summary>Размытая копия выделения: считается при первом размытии и дальше общая для всех мазков.</summary>
+    private Brush BlurFill() => _blurLayer ??= BlurLayer.Create(_snapshot, _bounds, (int)Math.Round(10 * _scale));
 
     /// <summary>Рисовать можно только внутри выделения: за его пределами аннотацию всё равно не будет видно.</summary>
     private Point Clamp(Point p) =>
