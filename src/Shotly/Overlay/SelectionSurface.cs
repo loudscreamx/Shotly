@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
 using Shotly.Capture;
 using Shotly.Core;
@@ -29,6 +30,11 @@ public sealed class SelectionSurface : FrameworkElement
         DashStyle = DashStyles.Dash,
     });
 
+    /// <summary>Сила вспышки готового выделения: 1 — только что выделили, 0 — обычный вид.</summary>
+    public static readonly DependencyProperty PulseProperty = DependencyProperty.Register(
+        nameof(Pulse), typeof(double), typeof(SelectionSurface),
+        new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
     private readonly CaptureSession _session;
     private readonly MonitorInfo _monitor;
     private readonly BitmapSource _background;
@@ -40,6 +46,24 @@ public sealed class SelectionSurface : FrameworkElement
         _background = background;
         SnapsToDevicePixels = true;
         RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
+    }
+
+    public double Pulse
+    {
+        get => (double)GetValue(PulseProperty);
+        set => SetValue(PulseProperty, value);
+    }
+
+    /// <summary>
+    /// Короткая вспышка выделения: светлая заливка и толстая рамка Ember → Amber, которые за полсекунды
+    /// возвращаются к обычному виду. Особенно нужна при клике «весь монитор»: без неё не видно, что снимок готов.
+    /// </summary>
+    public void PlayPulse()
+    {
+        BeginAnimation(PulseProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(520))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+        });
     }
 
     /// <summary>Физические пиксели рабочего стола → DIP этого окна. Масштаб считаем из фактического размера окна.</summary>
@@ -78,9 +102,7 @@ public sealed class SelectionSurface : FrameworkElement
         if (selection is { } sel && !sel.IsEmpty)
         {
             var local = ToLocal(sel);
-            var half = AccentPen.Thickness / 2;
-            // Рамка рисуется снаружи выделения и не перекрывает пиксели, которые попадут в снимок.
-            dc.DrawRectangle(null, AccentPen, new Rect(local.X - half, local.Y - half, local.Width + 2 * half, local.Height + 2 * half));
+            DrawFrame(dc, sel, local);
 
             if (_session.Editor is { } editor && !visible.IsEmpty)
                 DrawAnnotations(dc, editor, visible);
@@ -95,6 +117,50 @@ public sealed class SelectionSurface : FrameworkElement
             DrawCrosshair(dc, w, h);
             DrawHint(dc, w);
         }
+    }
+
+    /// <summary>
+    /// Рамка рисуется снаружи выделения и не перекрывает пиксели, которые попадут в снимок.
+    /// Но если снаружи нет экрана (выделение по краю монитора, клик «весь монитор»), эта сторона
+    /// ушла бы за край и рамки не было бы видно совсем — такие стороны рисуем внутри.
+    /// </summary>
+    private void DrawFrame(DrawingContext dc, PxRect sel, Rect local)
+    {
+        double pulse = Pulse;
+        var pen = pulse > 0.001
+            ? new Pen(FrameBrush(local), AccentPen.Thickness + 4 * pulse)
+            : AccentPen;
+        double half = pen.Thickness / 2;
+
+        int midX = sel.X + sel.Width / 2, midY = sel.Y + sel.Height / 2;
+        double left = OnScreen(sel.X - 1, midY) ? local.Left - half : local.Left + half;
+        double right = OnScreen(sel.Right, midY) ? local.Right + half : local.Right - half;
+        double top = OnScreen(midX, sel.Y - 1) ? local.Top - half : local.Top + half;
+        double bottom = OnScreen(midX, sel.Bottom) ? local.Bottom + half : local.Bottom - half;
+
+        if (pulse > 0.001)
+            dc.DrawRectangle(Brand.Solid(Brand.Cream, (byte)Math.Round(0x52 * pulse)), null, local);
+        if (right > left && bottom > top)
+            dc.DrawRectangle(null, pen, new Rect(left, top, right - left, bottom - top));
+    }
+
+    private bool OnScreen(int x, int y)
+    {
+        foreach (var m in _session.Snapshot.Monitors)
+            if (m.Bounds.Contains(x, y))
+                return true;
+        return false;
+    }
+
+    /// <summary>Градиент знака Orbit по высоте выделения: Ember сверху, Amber снизу.</summary>
+    private static Brush FrameBrush(Rect local)
+    {
+        var brush = new LinearGradientBrush(Brand.Ember, Brand.Amber, new Point(0, local.Top), new Point(0, local.Bottom))
+        {
+            MappingMode = BrushMappingMode.Absolute,
+        };
+        brush.Freeze();
+        return brush;
     }
 
     /// <summary>
@@ -116,7 +182,10 @@ public sealed class SelectionSurface : FrameworkElement
     private void DrawSizeLabel(DrawingContext dc, Rect local, PxRect sel)
     {
         var text = Text($"{sel.Width} × {sel.Height}", 12, TextBrush, Brand.TextFaceSemiBold);
-        var pill = new Size(text.Width + 18, text.Height + 8);
+        // Выделение уже в буфере обмена — говорим об этом прямо в подписи размера.
+        var copied = _session.CopiedSelection == sel ? Text("  ·  в буфере", 12, KeyBrush, Brand.TextFaceSemiBold) : null;
+        double textWidth = text.WidthIncludingTrailingWhitespace + (copied?.WidthIncludingTrailingWhitespace ?? 0);
+        var pill = new Size(textWidth + 18, text.Height + 8);
 
         double x = Math.Clamp(local.X, 4, Math.Max(4, ActualWidth - pill.Width - 4));
         double y = local.Y - pill.Height - 6;
@@ -125,6 +194,8 @@ public sealed class SelectionSurface : FrameworkElement
 
         dc.DrawRoundedRectangle(PillBrush, PillPen, new Rect(new Point(x, y), pill), 7, 7);
         dc.DrawText(text, new Point(x + 9, y + 4));
+        if (copied is not null)
+            dc.DrawText(copied, new Point(x + 9 + text.WidthIncludingTrailingWhitespace, y + 4));
     }
 
     private void DrawCrosshair(DrawingContext dc, double w, double h)
