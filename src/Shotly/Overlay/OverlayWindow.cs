@@ -22,6 +22,7 @@ public sealed class OverlayWindow : Window
     private readonly CaptureSession _session;
     private readonly SelectionSurface _surface;
     private readonly ActionBar _bar;
+    private readonly Grid _brushRing;
 
     public OverlayWindow(CaptureSession session, MonitorInfo monitor)
     {
@@ -57,8 +58,11 @@ public sealed class OverlayWindow : Window
         _bar.CommandInvoked += OnBarCommand;
         _bar.ToolChosen += tool => _session.Edit(ed => { ed.FinishText(); ed.Tool = tool; });
         _bar.ColorChosen += color => _session.Edit(ed => { ed.FinishText(); ed.Color = color; });
+        _bar.SizeStepped += StepSize;
+        _brushRing = CreateBrushRing();
 
         var layer = new Canvas();
+        layer.Children.Add(_brushRing);
         layer.Children.Add(_bar);
         var root = new Grid();
         root.Children.Add(_surface);
@@ -70,7 +74,20 @@ public sealed class OverlayWindow : Window
         DpiChanged += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(PlaceOnMonitor));
 
         MouseLeftButtonDown += OnLeftDown;
-        MouseMove += (_, _) => _session.OnMouseMove();
+        MouseMove += (_, _) =>
+        {
+            _session.OnMouseMove((Keyboard.Modifiers & ModifierKeys.Shift) != 0);
+            UpdatePointer();
+        };
+        MouseLeave += (_, _) => _brushRing.Visibility = Visibility.Collapsed;
+        // Колесо мыши в режиме правки меняет толщину (или размер набираемого текста).
+        MouseWheel += (_, e) =>
+        {
+            if (_session.State != SelectionState.Editing || e.Delta == 0)
+                return;
+            e.Handled = true;
+            StepSize(Math.Sign(e.Delta));
+        };
         MouseLeftButtonUp += (_, _) =>
         {
             ReleaseMouseCapture();
@@ -89,6 +106,11 @@ public sealed class OverlayWindow : Window
             _session.ResetOrCancel();
         };
         PreviewKeyDown += OnKeyDown;
+        PreviewKeyUp += (_, e) =>
+        {
+            if (e.Key is Key.LeftShift or Key.RightShift)
+                _session.OnShiftChanged(false);
+        };
         PreviewTextInput += (_, e) =>
         {
             if (_session.Editor is { IsTyping: true })
@@ -164,6 +186,14 @@ public sealed class OverlayWindow : Window
 
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
+        // Shift во время рисования сразу выпрямляет линию, даже если мышь стоит на месте.
+        if (e.Key is Key.LeftShift or Key.RightShift)
+        {
+            if (!e.IsRepeat)
+                _session.OnShiftChanged(true);
+            return;
+        }
+
         // AltGr приходит как Ctrl+Alt: без проверки Alt польское «ś» (AltGr+S) сохраняло бы снимок.
         bool ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0 && (Keyboard.Modifiers & ModifierKeys.Alt) == 0;
         bool shift = (Keyboard.Modifiers & ModifierKeys.Shift) != 0;
@@ -245,6 +275,8 @@ public sealed class OverlayWindow : Window
             case Key.Escape when editor.Items.Count == 0: _session.Cancel(); return true;
             case Key.Escape: return true;
             case Key.Enter: _session.Complete(CaptureAction.Copy); return true;
+            case Key.OemOpenBrackets or Key.OemMinus or Key.Subtract: StepSize(-1); return true;
+            case Key.OemCloseBrackets or Key.OemPlus or Key.Add: StepSize(1); return true;
             default: return false;
         }
     }
@@ -266,14 +298,64 @@ public sealed class OverlayWindow : Window
     {
         _surface.InvalidateVisual();
         UpdateActionBar();
+        UpdatePointer();
+    }
+
+    private void StepSize(int delta)
+    {
+        _session.Edit(ed => ed.StepSize(delta));
+        UpdatePointer();
+    }
+
+    /// <summary>
+    /// Курсор и круг кисти. Над текстом (своим набираемым или любым при инструменте «Текст») — «переместить»;
+    /// у маркера и кисти размытия вокруг курсора круг с настоящей толщиной кисти.
+    /// </summary>
+    private void UpdatePointer()
+    {
+        var editor = _session.State == SelectionState.Editing ? _session.Editor : null;
+        var (cx, cy) = _session.Cursor;
+        var point = new Point(cx, cy);
+
+        var cursor = Cursors.Cross;
+        if (editor is not null && !_bar.IsMouseOver)
+        {
+            if (editor.IsTyping && editor.IsDrawing || !editor.IsDrawing && editor.TextAt(point) is not null)
+                cursor = Cursors.SizeAll;
+            else if (editor.Tool == EditorTool.Text)
+                cursor = Cursors.IBeam;
+        }
+        if (Cursor != cursor)
+            Cursor = cursor;
+
+        double d = editor?.BrushDiameter ?? 0;
+        if (d <= 0 || _bar.IsMouseOver || !Monitor.Bounds.Contains(cx, cy)
+            || _session.Selection is not { } sel || !sel.Contains(cx, cy))
+        {
+            _brushRing.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        int r = (int)Math.Round(d / 2);
+        var local = _surface.ToLocal(new PxRect(cx - r, cy - r, 2 * r, 2 * r));
+        _brushRing.Width = Math.Max(4, local.Width);
+        _brushRing.Height = Math.Max(4, local.Height);
+        Canvas.SetLeft(_brushRing, local.X + (local.Width - _brushRing.Width) / 2);
+        Canvas.SetTop(_brushRing, local.Y + (local.Height - _brushRing.Height) / 2);
+        _brushRing.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Круг кисти: светлая линия на тёмной подложке, видна на любом фоне.</summary>
+    private static Grid CreateBrushRing()
+    {
+        var ring = new Grid { IsHitTestVisible = false, Visibility = Visibility.Collapsed, SnapsToDevicePixels = true };
+        ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Shotly.UI.Brand.Solid(Shotly.UI.Brand.Coal, 0x99), StrokeThickness = 3 });
+        ring.Children.Add(new System.Windows.Shapes.Ellipse { Stroke = Shotly.UI.Brand.Solid(Colors.White, 0xE6), StrokeThickness = 1, Margin = new Thickness(1) });
+        return ring;
     }
 
     private void UpdateActionBar()
     {
-        Cursor = _session.State == SelectionState.Editing
-            ? (_session.Editor?.Tool == EditorTool.Text ? Cursors.IBeam : Cursors.Cross)
-            : Cursors.Cross;
-
         if (_session.State is not (SelectionState.Selected or SelectionState.Editing) || _session.Selection is not { } sel)
         {
             _bar.Visibility = Visibility.Collapsed;

@@ -35,6 +35,9 @@ public sealed class ActionBar : Border
     public event Action<EditorTool>? ToolChosen;
     public event Action<Color>? ColorChosen;
 
+    /// <summary>Тоньше (−1) или толще (+1).</summary>
+    public event Action<int>? SizeStepped;
+
     public ActionBar()
     {
         Background = Brand.Solid(Brand.Coal, 0xF5);
@@ -59,7 +62,7 @@ public sealed class ActionBar : Border
     {
         var signature = editor is null
             ? "select"
-            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}";
+            : $"edit|{editor.Tool}|{editor.Color}|{editor.CanUndo}|{editor.CanRedo}|{editor.HasSize}|{editor.SizeLevel}";
         if (signature == _signature)
             return;
         _signature = signature;
@@ -72,14 +75,16 @@ public sealed class ActionBar : Border
         }
         else
         {
-            panel.Children.Add(Tool(Glyph.Arrow, "Стрелка (A)", EditorTool.Arrow, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Rectangle, "Рамка (R)", EditorTool.Rectangle, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Marker, "Маркер (M)", EditorTool.Marker, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Text, "Текст (T)", EditorTool.Text, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Arrow, "Стрелка (A). С Shift — ровный угол", EditorTool.Arrow, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Rectangle, "Рамка (R). С Shift — квадрат", EditorTool.Rectangle, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Marker, "Маркер (M). С Shift — прямая линия", EditorTool.Marker, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Text, "Текст (T). Текст можно перетащить за рамку", EditorTool.Text, editor.Tool));
             panel.Children.Add(Divider());
             panel.Children.Add(Tool(Glyph.Blur, "Размытие области (B)", EditorTool.Blur, editor.Tool));
-            panel.Children.Add(Tool(Glyph.BlurBrush, "Размытие кистью (Shift+B)", EditorTool.BlurBrush, editor.Tool));
+            panel.Children.Add(Tool(Glyph.BlurBrush, "Размытие кистью (Shift+B). С Shift — прямая линия", EditorTool.BlurBrush, editor.Tool));
             panel.Children.Add(Tool(Glyph.Pixelate, "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
+            panel.Children.Add(Divider());
+            AddSizeControl(panel, editor);
             panel.Children.Add(Divider());
             foreach (var color in EditorState.Palette)
                 panel.Children.Add(Swatch(color, color == editor.Color));
@@ -122,6 +127,52 @@ public sealed class ActionBar : Border
         bool active = tool == current;
         return Clickable(Icons.Element(glyph, active ? ActiveForegroundBrush : ForegroundBrush), tooltip, active, enabled: true,
             () => ToolChosen?.Invoke(tool));
+    }
+
+    /// <summary>
+    /// «− ● +»: точка показывает выбранную толщину в текущем цвете.
+    /// У размытия области размера нет, но место под регулятор остаётся, чтобы панель не прыгала.
+    /// </summary>
+    private void AddSizeControl(Panel panel, EditorState editor)
+    {
+        bool has = editor.HasSize;
+        int level = editor.SizeLevel;
+        bool text = editor.Tool == EditorTool.Text;
+        const string keys = " ([ ] или колесо мыши)";
+
+        bool canLess = has && level > 0;
+        panel.Children.Add(Compact(Clickable(Icons.Element(Glyph.Minus, canLess ? ForegroundBrush : DisabledBrush),
+            text ? "Текст мельче" + keys : "Тоньше" + keys, active: false, canLess, () => SizeStepped?.Invoke(-1))));
+
+        double d = 4 + level * 2.5; // 4…14 DIP
+        var dot = new Border
+        {
+            Width = d,
+            Height = d,
+            CornerRadius = new CornerRadius(d / 2),
+            Background = has ? Brand.Solid(editor.Color) : DisabledBrush,
+            BorderBrush = SwatchEdgeBrush,
+            BorderThickness = new Thickness(1),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        panel.Children.Add(new Border
+        {
+            Width = 18,
+            Background = Brushes.Transparent,
+            Child = dot,
+            ToolTip = has ? (text ? "Размер текста" : "Толщина") + $": {level + 1} из {EditorState.SizeLevels}" : "У размытия области размер не меняется",
+        });
+
+        bool canMore = has && level < EditorState.SizeLevels - 1;
+        panel.Children.Add(Compact(Clickable(Icons.Element(Glyph.Plus, canMore ? ForegroundBrush : DisabledBrush),
+            text ? "Текст крупнее" + keys : "Толще" + keys, active: false, canMore, () => SizeStepped?.Invoke(1))));
+    }
+
+    private static Border Compact(Border item)
+    {
+        item.Padding = new Thickness(5, 7, 5, 7);
+        return item;
     }
 
     private UIElement Swatch(Color color, bool active)

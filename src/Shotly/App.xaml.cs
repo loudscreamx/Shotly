@@ -238,7 +238,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
     private async Task RegionAsync(Snapshot snapshot)
     {
-        _session = new CaptureSession(snapshot);
+        _session = new CaptureSession(snapshot, _settings.EditorSizes);
         CaptureResult? result;
         try
         {

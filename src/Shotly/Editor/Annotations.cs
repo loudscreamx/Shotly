@@ -47,11 +47,43 @@ public abstract class DragAnnotation : Annotation
     public double Thickness { get; }
 
     public override bool IsEmpty => (End - Start).Length < 3;
+
+    /// <summary>Куда ставить конец при зажатом Shift: стрелка — ровный угол, прямоугольник — квадрат.</summary>
+    public virtual Point Constrain(Point end) => Snap.Square(Start, end);
+}
+
+/// <summary>Привязки для рисования с зажатым Shift.</summary>
+public static class Snap
+{
+    /// <summary>Шаг угла для прямых линий: горизонталь, вертикаль, 45° и промежуточные через 15°.</summary>
+    public const double AngleStep = 15;
+
+    /// <summary>Конец отрезка, повёрнутый к ближайшему «ровному» углу. Длина сохраняется.</summary>
+    public static Point Angle(Point from, Point to)
+    {
+        var v = to - from;
+        double len = v.Length;
+        if (len < 0.5)
+            return to;
+        double step = AngleStep * Math.PI / 180;
+        double angle = Math.Round(Math.Atan2(v.Y, v.X) / step) * step;
+        return from + new Vector(Math.Cos(angle) * len, Math.Sin(angle) * len);
+    }
+
+    /// <summary>Противоположный угол квадрата: сторона по большему из смещений.</summary>
+    public static Point Square(Point from, Point to)
+    {
+        var v = to - from;
+        double side = Math.Max(Math.Abs(v.X), Math.Abs(v.Y));
+        return new Point(from.X + (v.X < 0 ? -side : side), from.Y + (v.Y < 0 ? -side : side));
+    }
 }
 
 public sealed class ArrowAnnotation : DragAnnotation
 {
     public ArrowAnnotation(Color color, Point start, double thickness) : base(color, start, thickness) { }
+
+    public override Point Constrain(Point end) => Snap.Angle(Start, end);
 
     public override void Render(DrawingContext dc)
     {
@@ -106,10 +138,15 @@ public sealed class RectAnnotation : DragAnnotation
     }
 }
 
-/// <summary>Штрих от руки: копит точки и строит из них одну линию.</summary>
+/// <summary>
+/// Штрих от руки: копит точки и строит из них одну линию.
+/// С зажатым Shift от последней точки тянется прямой отрезок (с привязкой к ровным углам),
+/// а когда Shift отпущен, штрих продолжается от конца этого отрезка.
+/// </summary>
 public abstract class StrokeAnnotation : Annotation
 {
     private readonly List<Point> _points = new();
+    private Point? _straightTo;
 
     protected StrokeAnnotation(Color color, Point start, double thickness) : base(color)
     {
@@ -121,11 +158,28 @@ public abstract class StrokeAnnotation : Annotation
 
     public override bool IsEmpty => false; // даже точка — осознанное действие
 
-    public void Add(Point p)
+    public void Add(Point p, bool straight = false)
     {
+        if (straight)
+        {
+            _straightTo = Snap.Angle(_points[^1], p);
+            return;
+        }
+
+        FixStraight();
         // Не копим тысячи точек при медленном движении мыши.
         if ((p - _points[^1]).Length >= 1.5)
             _points.Add(p);
+    }
+
+    /// <summary>Делает прямой отрезок частью штриха (Shift отпущен или мышь отпущена).</summary>
+    public void FixStraight()
+    {
+        if (_straightTo is { } end)
+        {
+            _points.Add(end);
+            _straightTo = null;
+        }
     }
 
     /// <summary>
@@ -142,14 +196,15 @@ public abstract class StrokeAnnotation : Annotation
         };
         pen.Freeze();
 
+        var points = _straightTo is { } end ? _points.Append(end).ToList() : _points;
         var geometry = new StreamGeometry();
         using (var ctx = geometry.Open())
         {
-            ctx.BeginFigure(_points[0], isFilled: false, isClosed: false);
-            if (_points.Count == 1)
-                ctx.LineTo(_points[0] + new Vector(0.1, 0), true, true); // точка → круглая клякса
+            ctx.BeginFigure(points[0], isFilled: false, isClosed: false);
+            if (points.Count == 1)
+                ctx.LineTo(points[0] + new Vector(0.1, 0), true, true); // точка → круглая клякса
             else
-                ctx.PolyLineTo(_points.Skip(1).ToList(), true, true);
+                ctx.PolyLineTo(points.Skip(1).ToList(), true, true);
         }
         geometry.Freeze();
         dc.DrawGeometry(null, pen, geometry);
@@ -165,11 +220,15 @@ public sealed class MarkerAnnotation : StrokeAnnotation
         RenderStroke(dc, Frozen(new SolidColorBrush(Color.FromArgb(0x70, Color.R, Color.G, Color.B))));
 }
 
-/// <summary>Текст с тонкой контрастной обводкой, чтобы читался на любом фоне.</summary>
+/// <summary>
+/// Текст с тонкой контрастной обводкой, чтобы читался на любом фоне.
+/// Пока текст набирается, вокруг него рамка: за неё текст можно перетащить.
+/// </summary>
 public sealed class TextAnnotation : Annotation
 {
     // Фирменный Onest (встроен в exe), при сбое загрузки — Segoe UI.
     private static readonly Typeface Face = Shotly.UI.Brand.TextFaceSemiBold;
+    private static readonly Color FrameColor = Shotly.UI.Brand.Ember;
 
     public TextAnnotation(Color color, Point origin, double fontSize) : base(color)
     {
@@ -177,14 +236,36 @@ public sealed class TextAnnotation : Annotation
         FontSize = fontSize;
     }
 
-    public Point Origin { get; }
-    public double FontSize { get; }
+    public Point Origin { get; set; }
+    public double FontSize { get; set; }
     public string Text { get; set; } = string.Empty;
 
-    /// <summary>Пока текст набирается, рисуем курсор.</summary>
+    /// <summary>Пока текст набирается, рисуем курсор и рамку.</summary>
     public bool IsEditing { get; set; } = true;
 
     public override bool IsEmpty => string.IsNullOrWhiteSpace(Text);
+
+    /// <summary>Копия для повторной правки: старая остаётся в истории без изменений, и Ctrl+Z её вернёт.</summary>
+    public TextAnnotation Clone() => new(Color, Origin, FontSize) { Text = Text, IsEditing = false };
+
+    /// <summary>Отступ рамки от букв.</summary>
+    private double Padding => Math.Max(4, FontSize * 0.35);
+
+    /// <summary>Рамка вокруг текста (вместе с местом под курсор): за неё текст берут и перетаскивают.</summary>
+    public Rect Frame
+    {
+        get
+        {
+            var lines = Text.Split('\n');
+            double lineHeight = Format("Ag").Height;
+            double width = lines.Max(l => l.Length == 0 ? 0 : Format(l).WidthIncludingTrailingWhitespace);
+            var r = new Rect(Origin.X, Origin.Y, Math.Max(width + FontSize * 0.25, FontSize * 0.6), lineHeight * lines.Length);
+            r.Inflate(Padding, Padding * 0.6);
+            return r;
+        }
+    }
+
+    public bool HitTest(Point p) => Frame.Contains(p);
 
     private FormattedText Format(string text) =>
         new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight, Face, FontSize,
@@ -192,6 +273,9 @@ public sealed class TextAnnotation : Annotation
 
     public override void Render(DrawingContext dc)
     {
+        if (IsEditing)
+            RenderFrame(dc);
+
         if (Text.Length > 0)
         {
             var geometry = Format(Text).BuildGeometry(Origin);
@@ -215,6 +299,34 @@ public sealed class TextAnnotation : Annotation
             caret.Freeze();
             dc.DrawLine(caret, new Point(x, y), new Point(x, y + lineHeight));
         }
+    }
+
+    /// <summary>
+    /// Пунктир Ember поверх светлой подложки: рамку видно и на тёмном, и на светлом фоне.
+    /// Толщина растёт вместе с размером шрифта (а он — с масштабом монитора).
+    /// </summary>
+    private void RenderFrame(DrawingContext dc)
+    {
+        double k = Math.Max(1, FontSize / 20);
+        var frame = Frame;
+        var under = new Pen(Frozen(new SolidColorBrush(Color.FromArgb(0xB3, 0xFF, 0xFF, 0xFF))), 3 * k);
+        under.Freeze();
+        var dashed = new Pen(Frozen(new SolidColorBrush(FrameColor)), 1.5 * k)
+        {
+            DashStyle = new DashStyle(new double[] { 3, 2 }, 0),
+            DashCap = PenLineCap.Flat,
+        };
+        dashed.Freeze();
+        dc.DrawRoundedRectangle(null, under, frame, 3 * k, 3 * k);
+        dc.DrawRoundedRectangle(null, dashed, frame, 3 * k, 3 * k);
+
+        // Метки по углам подсказывают, что рамку можно взять и подвинуть.
+        var fill = Frozen(new SolidColorBrush(FrameColor));
+        var edge = new Pen(Brushes.White, 1 * k);
+        edge.Freeze();
+        double h = 3 * k;
+        foreach (var c in new[] { frame.TopLeft, frame.TopRight, frame.BottomLeft, frame.BottomRight })
+            dc.DrawRectangle(fill, edge, new Rect(c.X - h, c.Y - h, 2 * h, 2 * h));
     }
 }
 
