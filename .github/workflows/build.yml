@@ -26,11 +26,63 @@ jobs:
         shell: pwsh
         run: Get-ChildItem publish | Format-Table Name, @{n='MB';e={[math]::Round($_.Length/1MB,1)}}
 
+      # Подпись кода: без неё Windows показывает «Неизвестный издатель» и SmartScreen.
+      # Шаги выключены, пока не заданы переменные репозитория, и подписывают только сборки из main
+      # (сборки пулл-реквестов остаются неподписанными). Настройка: docs/CODE_SIGNING.md.
+
+      # Вариант А: Azure Artifact Signing (бывш. Trusted Signing), ~10 $ в месяц.
+      - name: Sign with Azure Artifact Signing
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_SIGNING_ENDPOINT != ''
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ vars.AZURE_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ vars.AZURE_CERTIFICATE_PROFILE }}
+          files: ${{ github.workspace }}\publish\Shotly.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Shotly
+          description-url: https://github.com/${{ github.repository }}
+
       - uses: actions/upload-artifact@v4
+        id: upload-unsigned
         with:
           name: Shotly-win-x64
           path: publish/Shotly.exe
           if-no-files-found: error
+
+      # Вариант Б: бесплатная подпись SignPath Foundation для открытых проектов.
+      # SignPath берёт exe из артефакта сборки, подписывает после ручного одобрения и возвращает его.
+      - name: Sign with SignPath
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v3
+        with:
+          connector-url: https://githubactions.connectors.signpath.io
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'shotly' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signed
+
+      - name: Use SignPath-signed exe
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.SIGNPATH_ORGANIZATION_ID != ''
+        shell: pwsh
+        run: Copy-Item signed/Shotly.exe publish/Shotly.exe -Force
+
+      - name: Check signature
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature publish/Shotly.exe
+          Write-Host "Подпись: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          $signingOn = '${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && (vars.AZURE_SIGNING_ENDPOINT != '' || vars.SIGNPATH_ORGANIZATION_ID != '') }}'
+          if ($signingOn -eq 'true' -and $sig.Status -ne 'Valid') { Write-Error "Подпись включена, но exe не подписан"; exit 1 }
 
       # После мержа в main exe публикуется как релиз v0.2.N: его можно скачать одним кликом,
       # а встроенное обновление находит его через /releases/latest.
