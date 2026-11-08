@@ -42,8 +42,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Та же иконка для трея: NotifyIcon берёт из .ico кадр нужного размера. -->
+    <!-- Значок трея: отдельный крупный глиф под тёмную и светлую панель (tools/make_tray_icons.py).
+         Shotly.ico — запасной вариант. NotifyIcon берёт из .ico кадр нужного размера. -->
     <EmbeddedResource Include="Assets\Shotly.ico" LogicalName="Shotly.ico" />
+    <EmbeddedResource Include="Assets\TrayDark.ico" LogicalName="TrayDark.ico" />
+    <EmbeddedResource Include="Assets\TrayLight.ico" LogicalName="TrayLight.ico" />
     <!-- Фирменные шрифты (брендбук): Onest для текста, Unbounded для заголовков. Лицензия OFL, тексты лежат рядом. -->
     <Resource Include="Assets\Fonts\*.ttf" />
   </ItemGroup>
