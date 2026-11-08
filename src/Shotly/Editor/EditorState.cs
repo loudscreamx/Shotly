@@ -7,7 +7,7 @@ using Shotly.Core;
 
 namespace Shotly.Editor;
 
-public enum EditorTool { Arrow, Rectangle, Marker, Text, Pixelate, Blur, BlurBrush }
+public enum EditorTool { Arrow, Rectangle, Pen, Marker, Text, Pixelate, Blur, BlurBrush }
 
 /// <summary>
 /// Состояние редактора внутри одной сессии захвата: инструмент, цвет, список аннотаций, undo/redo.
@@ -34,6 +34,7 @@ public sealed class EditorState
     {
         [EditorTool.Arrow] = (1.5, 5, 18),
         [EditorTool.Rectangle] = (1, 3, 14),
+        [EditorTool.Pen] = (1, 4, 40),
         [EditorTool.Marker] = (4, 18, 64),
         [EditorTool.Text] = (10, 20, 80),
         [EditorTool.Pixelate] = (4, 10, 32),
@@ -56,10 +57,31 @@ public sealed class EditorState
     private Annotation[]? _beforeReopen;
     private int _reopenIndex = -1;
 
-    // Перетаскивание текста за рамку.
+    // Перетаскивание текста за рамку и изменение размера за угловые ручки.
     private bool _movingText;
     private Point _moveFrom;
     private Point _moveOrigin;
+    private int _resizeCorner = -1;
+    private Point _resizeAnchor;
+    private double _resizeStartDistance;
+    private double _resizeStartFont;
+
+    /// <summary>Свой цвет, выбранный в палитре: остаётся на панели до конца работы программы.</summary>
+    public static Color? CustomColor { get; set; }
+
+    private static bool _textOutline;
+
+    /// <summary>Обводка у нового текста (по умолчанию выключена). Переключение сразу меняет набираемый текст.</summary>
+    public bool TextOutline
+    {
+        get => _textOutline;
+        set
+        {
+            _textOutline = value;
+            if (Active is TextAnnotation t)
+                t.Outline = value;
+        }
+    }
 
     /// <param name="scale">Масштаб монитора с выделением: толщины линий и размер текста растут вместе с DPI.</param>
     /// <param name="sizes">Выбранные толщины по инструментам (DIP); общий словарь из настроек, поэтому запоминаются между снимками.</param>
@@ -72,7 +94,17 @@ public sealed class EditorState
     }
 
     public EditorTool Tool { get; set; } = EditorTool.Arrow;
-    public Color Color { get; set; } = Palette[0];
+    public Color Color { get; private set; } = Palette[0];
+
+    /// <summary>Сменить цвет. Набираемый текст перекрашивается сразу, а не завершается.</summary>
+    public void SetColor(Color color)
+    {
+        Color = color;
+        if (!Palette.Contains(color))
+            CustomColor = color;
+        if (Active is TextAnnotation t)
+            t.Recolor(color);
+    }
 
     /// <summary>Аннотация, которая рисуется прямо сейчас (или текст, который набирается).</summary>
     public Annotation? Active { get; private set; }
@@ -83,7 +115,10 @@ public sealed class EditorState
     public bool IsTyping => Active is TextAnnotation;
 
     /// <summary>Мышь зажата: рисуется фигура или перетаскивается текст.</summary>
-    public bool IsDrawing => Active is not null and not TextAnnotation || _movingText;
+    public bool IsDrawing => Active is not null and not TextAnnotation || _movingText || _resizeCorner >= 0;
+
+    /// <summary>Тянется ли сейчас угловая ручка текста (для курсора).</summary>
+    public int ResizingCorner => _resizeCorner;
 
     /// <summary>Есть ли у инструмента размер (у размытия области его нет: сила размытия общая).</summary>
     public bool HasSize => Ranges.ContainsKey(Tool);
@@ -109,7 +144,7 @@ public sealed class EditorState
     }
 
     /// <summary>Толщина кисти текущего инструмента в физических пикселях (для круга-предпросмотра у курсора).</summary>
-    public double BrushDiameter => Tool is EditorTool.Marker or EditorTool.BlurBrush ? SizeOf(Tool) : 0;
+    public double BrushDiameter => Tool is EditorTool.Pen or EditorTool.Marker or EditorTool.BlurBrush ? SizeOf(Tool) : 0;
 
     /// <summary>Всё, что нужно нарисовать, включая незавершённую аннотацию.</summary>
     public IEnumerable<Annotation> Visible
@@ -159,8 +194,25 @@ public sealed class EditorState
         return null;
     }
 
+    /// <summary>Угловая ручка набираемого текста под точкой (0–3) или −1.</summary>
+    public int TextHandleAt(Point p) =>
+        Active is TextAnnotation t ? t.HandleAt(p, Math.Max(t.HandleHalf * 2, 7 * _scale)) : -1;
+
     public void Begin(Point p)
     {
+        // Ручки проверяем до ограничения точки выделением: угол рамки может выступать за его край.
+        int corner = TextHandleAt(p);
+        if (corner >= 0 && Active is TextAnnotation editing)
+        {
+            var frame = editing.Frame;
+            _resizeCorner = corner;
+            _resizeAnchor = TextAnnotation.Corner(frame, 3 - corner);
+            _resizeStartDistance = Math.Max(1, (TextAnnotation.Corner(frame, corner) - _resizeAnchor).Length);
+            _resizeStartFont = editing.FontSize;
+            _moveOrigin = editing.Origin;
+            return;
+        }
+
         p = Clamp(p);
 
         if (TextAt(p) is { } text)
@@ -182,8 +234,9 @@ public sealed class EditorState
         {
             EditorTool.Arrow => new ArrowAnnotation(Color, p, size),
             EditorTool.Rectangle => new RectAnnotation(Color, p, size),
+            EditorTool.Pen => new BrushAnnotation(Color, p, size),
             EditorTool.Marker => new MarkerAnnotation(Color, p, size),
-            EditorTool.Text => new TextAnnotation(Color, p, size),
+            EditorTool.Text => new TextAnnotation(Color, p, size) { Outline = TextOutline },
             EditorTool.Pixelate => new PixelateAnnotation(_snapshot, p, size),
             EditorTool.Blur => new BlurAnnotation(BlurFill(), p),
             EditorTool.BlurBrush => new BlurBrushAnnotation(BlurFill(), p, size),
@@ -194,6 +247,12 @@ public sealed class EditorState
     /// <param name="constrain">Зажат Shift: кисть и маркер ведут прямую, стрелка — под ровным углом, рамка — квадрат.</param>
     public void Update(Point p, bool constrain = false)
     {
+        if (_resizeCorner >= 0 && Active is TextAnnotation resized)
+        {
+            ResizeText(resized, p);
+            return;
+        }
+
         p = Clamp(p);
         if (_movingText && Active is TextAnnotation t)
         {
@@ -210,6 +269,11 @@ public sealed class EditorState
 
     public void End()
     {
+        if (_resizeCorner >= 0)
+        {
+            _resizeCorner = -1;
+            return;
+        }
         if (_movingText)
         {
             _movingText = false; // текст остаётся в наборе: можно дописать или подвинуть ещё раз
@@ -249,7 +313,13 @@ public sealed class EditorState
     /// <summary>Отменить фигуру, которая рисуется прямо сейчас (Esc с зажатой мышью). Текст возвращается на место.</summary>
     public void CancelActive()
     {
-        if (_movingText && Active is TextAnnotation t)
+        if (_resizeCorner >= 0 && Active is TextAnnotation r)
+        {
+            r.FontSize = _resizeStartFont;
+            r.Origin = _moveOrigin;
+            _resizeCorner = -1;
+        }
+        else if (_movingText && Active is TextAnnotation t)
         {
             t.Origin = _moveOrigin;
             _movingText = false;
@@ -267,6 +337,7 @@ public sealed class EditorState
         {
             t.IsEditing = false;
             _movingText = false;
+            _resizeCorner = -1;
             Commit();
         }
     }
@@ -305,6 +376,22 @@ public sealed class EditorState
             return;
         _undo.Push(_items.ToArray());
         _items = _redo.Pop().ToList();
+    }
+
+    /// <summary>
+    /// Размер текста за угловую ручку: шрифт растёт пропорционально расстоянию от противоположного угла,
+    /// а этот угол остаётся на месте. Ползунок толщины текста следует за ручкой.
+    /// </summary>
+    private void ResizeText(TextAnnotation t, Point p)
+    {
+        var range = Ranges[EditorTool.Text];
+        double scale = (p - _resizeAnchor).Length / _resizeStartDistance;
+        t.FontSize = Math.Clamp(_resizeStartFont * scale, range.Min * _scale * 0.5, range.Max * _scale * 2);
+
+        // Возвращаем противоположный угол новой рамки туда, где он был.
+        var drift = _resizeAnchor - TextAnnotation.Corner(t.Frame, 3 - _resizeCorner);
+        t.Origin += drift;
+        _sizes[EditorTool.Text.ToString()] = Math.Round(Math.Clamp(t.FontSize / _scale, range.Min, range.Max), 1);
     }
 
     /// <summary>Готовый текст снова становится редактируемым: вместо него в списке появится правленая копия.</summary>
@@ -346,7 +433,8 @@ public sealed class EditorState
             {
                 // Правка готового текста: пустой — удалён, иначе встаёт на прежнее место в списке.
                 var original = (TextAnnotation)before[_reopenIndex];
-                if (edited.Text == original.Text && edited.Origin == original.Origin && edited.FontSize == original.FontSize)
+                if (edited.Text == original.Text && edited.Origin == original.Origin && edited.FontSize == original.FontSize
+                    && edited.Color == original.Color && edited.Outline == original.Outline)
                 {
                     _items = before.ToList(); // ничего не поменялось — и в истории ничего нет
                     return;
