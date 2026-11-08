@@ -30,14 +30,15 @@ public sealed class CaptureSession
     private bool _finished;
     private readonly Func<PxRect, bool>? _copyOnSelect;
     private DispatcherTimer? _nudgeCopy;
+    private DispatcherTimer? _escDisarm;
 
-    private readonly IDictionary<string, int>? _editorSizes;
+    private readonly IDictionary<string, double>? _editorSizes;
 
     /// <param name="copyOnSelect">
     /// Если задано — каждое готовое выделение сразу копируется в буфер обмена (возвращает false, если не вышло).
     /// </param>
     /// <param name="editorSizes">Размеры инструментов из настроек: редактор меняет их на месте.</param>
-    public CaptureSession(Snapshot snapshot, Func<PxRect, bool>? copyOnSelect = null, IDictionary<string, int>? editorSizes = null)
+    public CaptureSession(Snapshot snapshot, Func<PxRect, bool>? copyOnSelect = null, IDictionary<string, double>? editorSizes = null)
     {
         Snapshot = snapshot;
         _copyOnSelect = copyOnSelect;
@@ -308,12 +309,44 @@ public sealed class CaptureSession
 
     public void Cancel() => Finish(null);
 
+    /// <summary>Esc уже нажат один раз при правках: второй Esc в ближайшие секунды закроет снимок.</summary>
+    public bool CloseArmed { get; private set; }
+
+    /// <summary>
+    /// Esc в редакторе. Без правок закрывает сразу. С правками первый Esc показывает подсказку,
+    /// второй (в течение 2,5 с) закрывает: случайное нажатие не выбросит работу, а закрыть всё равно просто.
+    /// </summary>
+    public void RequestCloseByEsc()
+    {
+        if (CloseArmed || Editor is null || Editor.Items.Count == 0)
+        {
+            Cancel();
+            return;
+        }
+
+        CloseArmed = true;
+        if (_escDisarm is null)
+        {
+            _escDisarm = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            _escDisarm.Tick += (_, _) =>
+            {
+                _escDisarm.Stop();
+                CloseArmed = false;
+                Changed?.Invoke();
+            };
+        }
+        _escDisarm.Stop();
+        _escDisarm.Start();
+        Changed?.Invoke();
+    }
+
     private void Finish(CaptureResult? result)
     {
         if (_finished)
             return;
         _finished = true;
         _nudgeCopy?.Stop();
+        _escDisarm?.Stop();
         CloseOverlays();
         // Отдаём результат после закрытия окон, чтобы оверлей точно не попал в следующий кадр.
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _tcs.TrySetResult(result)));
