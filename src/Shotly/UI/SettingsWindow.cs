@@ -109,6 +109,7 @@ public sealed class SettingsWindow : Window
         root.Children.Add(Row("Активное окно", _hkWindow));
         root.Children.Add(Row("Весь экран", _hkFull));
         root.Children.Add(Row("Повтор области", _hkRepeat));
+        root.Children.Add(Row(string.Empty, PrintScreenHint()));
 
         root.Children.Add(Section("Система"));
         root.Children.Add(Row(string.Empty, _autostart));
@@ -143,6 +144,34 @@ public sealed class SettingsWindow : Window
         root.Children.Add(buttons);
 
         return root;
+    }
+
+    /// <summary>
+    /// Одиночная PrtScn в Windows 11 по умолчанию открывает «Ножницы», и Shotly её не получит.
+    /// Поэтому умолчания Shotly — с модификаторами, а здесь подсказка, где это выключить.
+    /// </summary>
+    private static TextBlock PrintScreenHint()
+    {
+        var hint = new TextBlock
+        {
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = Brushes.Gray,
+            FontSize = 12,
+            Text = "Одиночную PrtScn в Windows 11 занимают «Ножницы». Чтобы отдать её Shotly, выключите в Windows " +
+                   "«Использовать клавишу Print Screen для захвата экрана». ",
+        };
+        var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Открыть параметры"));
+        link.Click += (_, _) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:easeofaccess-keyboard")
+                    { UseShellExecute = true });
+            }
+            catch (Exception ex) { Log.Error("Не удалось открыть параметры клавиатуры", ex); }
+        };
+        hint.Inlines.Add(link);
+        return hint;
     }
 
     private static TextBlock Section(string title) => new()
