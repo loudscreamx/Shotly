@@ -92,7 +92,7 @@ public sealed class ActionBar : Border
         panel.Children.Add(Button(Glyph.Copy, "Копировать", "Копировать в буфер (Enter, Ctrl+C)", BarCommand.Copy));
         panel.Children.Add(Button(Glyph.Save, "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
         panel.Children.Add(Divider());
-        panel.Children.Add(Button(Glyph.Close, null, "Отменить снимок (Esc, а при правке — только эта кнопка)", BarCommand.Cancel));
+        panel.Children.Add(Button(Glyph.Close, null, "Закрыть (Esc, а при правке — только эта кнопка)", BarCommand.Cancel));
         Child = panel;
     }
 
