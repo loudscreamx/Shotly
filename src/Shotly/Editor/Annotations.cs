@@ -148,10 +148,18 @@ public abstract class StrokeAnnotation : Annotation
     private readonly List<Point> _points = new();
     private Point? _straightTo;
 
+    /// <summary>
+    /// Стабилизация: каждая новая точка сдвигается к курсору только на эту долю пути.
+    /// Дрожание руки и «ступеньки» мыши сглаживаются, а линия отстаёт от курсора всего на пару пикселей.
+    /// </summary>
+    private const double Smoothing = 0.4;
+    private Point _smoothed;
+
     protected StrokeAnnotation(Color color, Point start, double thickness) : base(color)
     {
         Thickness = thickness;
         _points.Add(start);
+        _smoothed = start;
     }
 
     public double Thickness { get; }
@@ -167,9 +175,10 @@ public abstract class StrokeAnnotation : Annotation
         }
 
         FixStraight();
+        _smoothed += (p - _smoothed) * Smoothing;
         // Не копим тысячи точек при медленном движении мыши.
-        if ((p - _points[^1]).Length >= 1.5)
-            _points.Add(p);
+        if ((_smoothed - _points[^1]).Length >= 2)
+            _points.Add(_smoothed);
     }
 
     /// <summary>Делает прямой отрезок частью штриха (Shift отпущен или мышь отпущена).</summary>
@@ -178,6 +187,7 @@ public abstract class StrokeAnnotation : Annotation
         if (_straightTo is { } end)
         {
             _points.Add(end);
+            _smoothed = end;
             _straightTo = null;
         }
     }
@@ -186,6 +196,8 @@ public abstract class StrokeAnnotation : Annotation
     /// Рисует весь штрих одной геометрией: самопересечения не темнеют (маркер)
     /// и не дают швов (кисть размытия).
     /// </summary>
+    private static Point Mid(Point a, Point b) => new((a.X + b.X) / 2, (a.Y + b.Y) / 2);
+
     protected void RenderStroke(DrawingContext dc, Brush brush)
     {
         var pen = new Pen(brush, Thickness)
@@ -202,9 +214,17 @@ public abstract class StrokeAnnotation : Annotation
         {
             ctx.BeginFigure(points[0], isFilled: false, isClosed: false);
             if (points.Count == 1)
+            {
                 ctx.LineTo(points[0] + new Vector(0.1, 0), true, true); // точка → круглая клякса
+            }
             else
-                ctx.PolyLineTo(points.Skip(1).ToList(), true, true);
+            {
+                // Плавная кривая вместо ломаной: каждая точка становится опорной для кривой Безье
+                // между серединами соседних отрезков, поэтому на изгибах нет углов.
+                for (int i = 1; i < points.Count - 1; i++)
+                    ctx.QuadraticBezierTo(points[i], Mid(points[i], points[i + 1]), true, true);
+                ctx.LineTo(points[^1], true, true);
+            }
         }
         geometry.Freeze();
         dc.DrawGeometry(null, pen, geometry);
