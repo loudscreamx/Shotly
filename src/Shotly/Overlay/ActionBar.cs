@@ -134,6 +134,14 @@ public sealed class ActionBar : Border
         Update(null);
     }
 
+    /// <summary>Содержимое сменилось: размер панели нужно пересчитать по всей цепочке, а не только у ряда кнопок.</summary>
+    private void InvalidateRows()
+    {
+        _toolbarRow.InvalidateMeasure();
+        (Child as UIElement)?.InvalidateMeasure();
+        InvalidateMeasure();
+    }
+
     private bool PickerOpen => _pickerRow.Visibility == Visibility.Visible;
 
     private void SetPickerOpen(bool open)
@@ -141,6 +149,7 @@ public sealed class ActionBar : Border
         if (open == PickerOpen)
             return;
         _pickerRow.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        InvalidateRows();
         _signature = string.Empty; // перерисовать кнопку своего цвета (активна, пока палитра открыта)
         LayoutChanged?.Invoke();
     }
@@ -202,6 +211,7 @@ public sealed class ActionBar : Border
         panel.Children.Add(Divider());
         panel.Children.Add(Button(Glyph.Close, null, "Закрыть без сохранения (Esc; если есть правки — Esc дважды)", BarCommand.Cancel));
         _toolbarRow.Content = panel;
+        InvalidateRows();
     }
 
     private UIElement Button(Glyph glyph, string? label, string tooltip, BarCommand command, bool enabled = true)
