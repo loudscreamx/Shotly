@@ -207,16 +207,15 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         }
 
         var snapshot = ScreenCapture.CaptureVirtualScreen();
-        Deliver(snapshot, bounds.Value, _settings.QuickAction);
+        await DeliverInstantAsync(snapshot, bounds.Value);
     });
 
-    public void CaptureFullScreen() => RunCapture(() =>
+    public void CaptureFullScreen() => RunCapture(async () =>
     {
         var snapshot = ScreenCapture.CaptureVirtualScreen();
         var (x, y) = ScreenCapture.CursorPosition();
         var monitor = Monitors.FromPoint(snapshot.Monitors, x, y);
-        Deliver(snapshot, monitor.Bounds, _settings.QuickAction);
-        return Task.CompletedTask;
+        await DeliverInstantAsync(snapshot, monitor.Bounds);
     });
 
     public void RepeatLastRegion() => RunCapture(async () =>
@@ -226,7 +225,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
             && _settings.LastRegionLayout == snapshot.LayoutKey
             && !last.Intersect(snapshot.VirtualBounds).IsEmpty)
         {
-            Deliver(snapshot, last, _settings.QuickAction);
+            await DeliverInstantAsync(snapshot, last);
             return;
         }
 
@@ -238,7 +237,11 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
     private async Task RegionAsync(Snapshot snapshot)
     {
-        _session = new CaptureSession(snapshot, _settings.EditorSizes);
+        // Выделенная область сразу уходит в буфер обмена, без кнопки «Копировать».
+        Func<PxRect, bool>? copyOnSelect = _settings.CopyOnSelect
+            ? region => TryCopy(snapshot.Crop(region), notify: false)
+            : null;
+        _session = new CaptureSession(snapshot, copyOnSelect, _settings.EditorSizes);
         CaptureResult? result;
         try
         {
@@ -268,42 +271,58 @@ public partial class App : Application, ITrayCommands, ISettingsHost
             _tray?.Notify("Правки не сохранились", "Снимок слишком большой, сохранён без аннотаций.", error: true);
             image = snapshot.Crop(result.Region);
         }
-        Deliver(image, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
+        await DeliverAsync(image, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
     }
 
-    private void Deliver(Snapshot snapshot, PxRect region, QuickAction action) =>
-        Deliver(snapshot.Crop(region), action);
-
-    private void Deliver(BitmapSource image, QuickAction action)
+    /// <summary>
+    /// Захват без оверлея (весь экран, окно, повтор области): сразу показываем вспышку с рамкой
+    /// над снятой областью, чтобы было видно, что снимок сделан и что именно в него попало.
+    /// </summary>
+    private async Task DeliverInstantAsync(Snapshot snapshot, PxRect region)
     {
+        var shown = region.Intersect(snapshot.VirtualBounds);
+        if (!shown.IsEmpty)
+            CaptureFlash.Show(snapshot.Monitors, shown);
+        await DeliverAsync(snapshot.Crop(region), _settings.QuickAction);
+    }
 
-        // Сначала сохраняем, потом копируем, и каждое действие отдельно:
-        // занятый буфер обмена не должен приводить к потере снимка.
-        if (action is QuickAction.Save or QuickAction.CopyAndSave)
+    private async Task DeliverAsync(BitmapSource image, QuickAction action)
+    {
+        bool copy = action is QuickAction.Copy or QuickAction.CopyAndSave;
+        bool save = action is QuickAction.Save or QuickAction.CopyAndSave;
+
+        // Сначала буфер обмена: это быстро, и снимок можно вставлять, пока файл ещё пишется.
+        // Каждое действие обёрнуто отдельно: занятый буфер обмена не должен приводить к потере файла.
+        bool copied = copy && TryCopy(image, notify: true);
+        if (!save)
+            return;
+
+        try
         {
-            try
-            {
-                var path = _output.Save(image);
-                _tray?.Notify("Снимок сохранён", path);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Не удалось сохранить снимок", ex);
-                _tray?.Notify("Снимок не сохранён", ex.Message, error: true);
-            }
+            // PNG большого экрана кодируется сотни миллисекунд — в фоне, чтобы не замирала вспышка.
+            var path = await Task.Run(() => _output.Save(image));
+            _tray?.Notify(copied ? "Снимок скопирован и сохранён" : "Снимок сохранён", path);
         }
-
-        if (action is QuickAction.Copy or QuickAction.CopyAndSave)
+        catch (Exception ex)
         {
-            try
-            {
-                _output.CopyToClipboard(image);
-            }
-            catch (Exception ex)
-            {
-                Log.Error("Не удалось скопировать в буфер обмена", ex);
+            Log.Error("Не удалось сохранить снимок", ex);
+            _tray?.Notify("Снимок не сохранён", (copied ? "В буфере обмена он есть. " : string.Empty) + ex.Message, error: true);
+        }
+    }
+
+    private bool TryCopy(BitmapSource image, bool notify)
+    {
+        try
+        {
+            _output.CopyToClipboard(image);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Не удалось скопировать в буфер обмена", ex);
+            if (notify)
                 _tray?.Notify("Буфер обмена занят", "Снимок не скопирован. " + ex.Message, error: true);
-            }
+            return false;
         }
     }
 

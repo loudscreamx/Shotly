@@ -49,6 +49,12 @@ public sealed class AppSettings
     public ImageFormatKind Format { get; set; } = ImageFormatKind.Png;
     public int JpegQuality { get; set; } = 90;
     public QuickAction QuickAction { get; set; } = QuickAction.CopyAndSave;
+
+    /// <summary>
+    /// Выделенная область сразу попадает в буфер обмена, без кнопки «Копировать».
+    /// Правки, сделанные потом, копируются по «Копировать» или Enter, как раньше.
+    /// </summary>
+    public bool CopyOnSelect { get; set; } = true;
     public HotkeySettings Hotkeys { get; set; } = new();
 
     /// <summary>Размеры инструментов редактора (ступень 0–4 по имени инструмента): запоминаются между снимками.</summary>

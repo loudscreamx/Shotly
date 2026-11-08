@@ -28,13 +28,19 @@ public sealed class CaptureSession
     private (int X, int Y) _anchor;
     private PxRect _moveOrigin;
     private bool _finished;
+    private readonly Func<PxRect, bool>? _copyOnSelect;
+    private DispatcherTimer? _nudgeCopy;
 
     private readonly IDictionary<string, int>? _editorSizes;
 
+    /// <param name="copyOnSelect">
+    /// Если задано — каждое готовое выделение сразу копируется в буфер обмена (возвращает false, если не вышло).
+    /// </param>
     /// <param name="editorSizes">Размеры инструментов из настроек: редактор меняет их на месте.</param>
-    public CaptureSession(Snapshot snapshot, IDictionary<string, int>? editorSizes = null)
+    public CaptureSession(Snapshot snapshot, Func<PxRect, bool>? copyOnSelect = null, IDictionary<string, int>? editorSizes = null)
     {
         Snapshot = snapshot;
+        _copyOnSelect = copyOnSelect;
         _editorSizes = editorSizes;
     }
 
@@ -46,8 +52,14 @@ public sealed class CaptureSession
     /// <summary>Редактор: появляется, когда пользователь переходит к правке выделения.</summary>
     public EditorState? Editor { get; private set; }
 
+    /// <summary>Выделение, которое сейчас лежит в буфере обмена (если включено копирование при выделении).</summary>
+    public PxRect? CopiedSelection { get; private set; }
+
     /// <summary>Перерисовать все оверлеи.</summary>
     public event Action? Changed;
+
+    /// <summary>Выделение готово (отпустили мышь): оверлеи проигрывают короткую вспышку рамки.</summary>
+    public event Action? SelectionCommitted;
 
     public Task<CaptureResult?> RunAsync()
     {
@@ -155,6 +167,7 @@ public sealed class CaptureSession
             return;
         }
 
+        bool pulse = true;
         if (State == SelectionState.Dragging)
         {
             if (Selection is not { } sel || sel.Width < MinSize || sel.Height < MinSize)
@@ -168,9 +181,46 @@ public sealed class CaptureSession
         else if (State == SelectionState.Moving)
         {
             State = SelectionState.Selected;
+            // Простой клик внутри выделения (например, первый из двойного) ничего не меняет — без вспышки.
+            pulse = Selection != _moveOrigin;
+        }
+        else
+        {
+            Changed?.Invoke();
+            return;
         }
 
         Changed?.Invoke();
+        CommitSelection(pulse);
+    }
+
+    /// <summary>
+    /// Готовое выделение: вспышка рамки, а если включено — сразу копия в буфер обмена.
+    /// Копируем после отрисовки вспышки, чтобы отклик появлялся мгновенно даже на 4K.
+    /// </summary>
+    private void CommitSelection(bool pulse)
+    {
+        _nudgeCopy?.Stop();
+        if (State != SelectionState.Selected || Selection is not { } sel || sel.IsEmpty)
+            return;
+
+        if (pulse)
+            SelectionCommitted?.Invoke();
+
+        if (_copyOnSelect is null || CopiedSelection == sel)
+            return;
+
+        Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            // За это время выделение могли сдвинуть, начать правку или закрыть снимок.
+            if (_finished || State != SelectionState.Selected || Selection != sel)
+                return;
+            if (_copyOnSelect(sel))
+            {
+                CopiedSelection = sel;
+                Changed?.Invoke();
+            }
+        }));
     }
 
     /// <summary>Сдвиг (или изменение размера с Shift) выделения стрелками на 1 пиксель, с Ctrl — на 10.</summary>
@@ -183,6 +233,18 @@ public sealed class CaptureSession
             ? new PxRect(sel.X, sel.Y, Math.Max(1, sel.Width + dx), Math.Max(1, sel.Height + dy)).Intersect(Snapshot.VirtualBounds)
             : ClampToMonitors(sel.Offset(dx, dy));
         Changed?.Invoke();
+
+        // Стрелки жмут сериями: копируем, когда выделение перестало двигаться.
+        if (_copyOnSelect is not null)
+        {
+            if (_nudgeCopy is null)
+            {
+                _nudgeCopy = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(350) };
+                _nudgeCopy.Tick += (_, _) => CommitSelection(pulse: false);
+            }
+            _nudgeCopy.Stop();
+            _nudgeCopy.Start();
+        }
     }
 
     /// <summary>
@@ -251,6 +313,7 @@ public sealed class CaptureSession
         if (_finished)
             return;
         _finished = true;
+        _nudgeCopy?.Stop();
         CloseOverlays();
         // Отдаём результат после закрытия окон, чтобы оверлей точно не попал в следующий кадр.
         Dispatcher.CurrentDispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => _tcs.TrySetResult(result)));
@@ -265,5 +328,6 @@ public sealed class CaptureSession
         }
         _overlays.Clear();
         Changed = null;
+        SelectionCommitted = null;
     }
 }
