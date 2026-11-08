@@ -365,6 +365,28 @@ public sealed class OverlayWindow : Window
         return ring;
     }
 
+    private double _barScale = 1;
+
+    /// <summary>
+    /// Размер панели после полного прохода раскладки. Если панель шире монитора (маленький экран, крупный масштаб),
+    /// она равномерно уменьшается, чтобы все кнопки остались на экране.
+    /// </summary>
+    private Size MeasureBar(double available)
+    {
+        _bar.UpdateLayout();
+        var size = _bar.DesiredSize;
+        double natural = size.Width / _barScale;
+        double scale = available > 0 && natural > available ? available / natural : 1;
+        if (Math.Abs(scale - _barScale) > 0.001)
+        {
+            _barScale = scale;
+            _bar.LayoutTransform = scale == 1 ? Transform.Identity : new ScaleTransform(scale, scale);
+            _bar.UpdateLayout();
+            size = _bar.DesiredSize;
+        }
+        return size;
+    }
+
     private void UpdateActionBar()
     {
         if (_session.State is not (SelectionState.Selected or SelectionState.Editing) || _session.Selection is not { } sel)
@@ -382,11 +404,13 @@ public sealed class OverlayWindow : Window
 
         _bar.Update(_session.Editor);
         _bar.Visibility = Visibility.Visible;
-        _bar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-        var size = _bar.DesiredSize;
-        var local = _surface.ToLocal(sel);
+        // Полный проход раскладки, а не Measure панели: после перестройки ряда кнопок
+        // Measure мог вернуть старый размер (например, узкой панели «Правка · Копировать»),
+        // и широкая панель редактора уезжала за правый край экрана.
         double w = ActualWidth, h = ActualHeight;
         const double gap = 8;
+        var size = MeasureBar(w - 2 * gap);
+        var local = _surface.ToLocal(sel);
 
         // Под выделением справа; не влезает — над ним; и там нет места — внутри у нижнего края.
         double x = local.Right - size.Width;
