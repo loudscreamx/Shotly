@@ -128,8 +128,10 @@ public sealed class HotkeyManager : IDisposable
             return true;
         }
 
-        return !int.TryParse(part, out _) && Enum.TryParse(part, ignoreCase: true, out key)
-               && Enum.IsDefined(key) && key != Key.None;
+        key = Key.None;
+        if (int.TryParse(part, out _)) // число дало бы произвольное значение enum
+            return false;
+        return Enum.TryParse(part, ignoreCase: true, out key) && Enum.IsDefined(key) && key != Key.None;
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
