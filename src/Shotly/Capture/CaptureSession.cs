@@ -31,13 +31,17 @@ public sealed class CaptureSession
     private readonly Func<PxRect, bool>? _copyOnSelect;
     private DispatcherTimer? _nudgeCopy;
 
+    private readonly IDictionary<string, int>? _editorSizes;
+
     /// <param name="copyOnSelect">
     /// Если задано — каждое готовое выделение сразу копируется в буфер обмена (возвращает false, если не вышло).
     /// </param>
-    public CaptureSession(Snapshot snapshot, Func<PxRect, bool>? copyOnSelect = null)
+    /// <param name="editorSizes">Размеры инструментов из настроек: редактор меняет их на месте.</param>
+    public CaptureSession(Snapshot snapshot, Func<PxRect, bool>? copyOnSelect = null, IDictionary<string, int>? editorSizes = null)
     {
         Snapshot = snapshot;
         _copyOnSelect = copyOnSelect;
+        _editorSizes = editorSizes;
     }
 
     public Snapshot Snapshot { get; }
@@ -112,7 +116,8 @@ public sealed class CaptureSession
         Changed?.Invoke();
     }
 
-    public void OnMouseMove()
+    /// <param name="shift">Зажат Shift: в редакторе прямая линия кистью, ровный угол стрелки, квадратная рамка.</param>
+    public void OnMouseMove(bool shift = false)
     {
         var p = ScreenCapture.CursorPosition();
         if (p == Cursor && State != SelectionState.Dragging)
@@ -123,7 +128,7 @@ public sealed class CaptureSession
         {
             if (Editor is { IsDrawing: true } editor)
             {
-                editor.Update(new System.Windows.Point(p.X, p.Y));
+                editor.Update(new System.Windows.Point(p.X, p.Y), shift);
                 Changed?.Invoke();
             }
             return;
@@ -141,6 +146,15 @@ public sealed class CaptureSession
                 break;
         }
 
+        Changed?.Invoke();
+    }
+
+    /// <summary>Shift нажали или отпустили, не двигая мышь: сразу перестроить фигуру, которая рисуется.</summary>
+    public void OnShiftChanged(bool shift)
+    {
+        if (State != SelectionState.Editing || Editor is not { IsDrawing: true } editor)
+            return;
+        editor.Update(new System.Windows.Point(Cursor.X, Cursor.Y), shift);
         Changed?.Invoke();
     }
 
@@ -252,7 +266,7 @@ public sealed class CaptureSession
         if (State != SelectionState.Selected || Selection is not { } sel)
             return;
         var scale = Monitors.FromRect(Snapshot.Monitors, sel).Scale;
-        Editor = new EditorState(Snapshot, sel, scale);
+        Editor = new EditorState(Snapshot, sel, scale, _editorSizes);
         State = SelectionState.Editing;
         Changed?.Invoke();
     }

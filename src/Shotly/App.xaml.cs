@@ -241,7 +241,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         Func<PxRect, bool>? copyOnSelect = _settings.CopyOnSelect
             ? region => TryCopy(snapshot.Crop(region), notify: false)
             : null;
-        _session = new CaptureSession(snapshot, copyOnSelect);
+        _session = new CaptureSession(snapshot, copyOnSelect, _settings.EditorSizes);
         CaptureResult? result;
         try
         {
