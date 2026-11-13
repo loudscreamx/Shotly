@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Сообщить об уязвимости
+    url: https://github.com/loudscreamx/Shotly/security/advisories/new
+    about: Пожалуйста, сообщайте об уязвимостях приватно, а не в открытом issue.
