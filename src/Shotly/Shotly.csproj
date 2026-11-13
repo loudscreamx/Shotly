@@ -16,7 +16,7 @@
     <!-- Сведения о файле: их показывают «Свойства → Подробно», окно SmartScreen и сервисы подписи. -->
     <Product>Shotly</Product>
     <Description>Shotly — скриншоты для Windows</Description>
-    <Copyright>© 2026 Maria</Copyright>
+    <Copyright>© 2026 loudscreamx</Copyright>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- Иконка .exe, панели задач и окон. Исходники бренда: assets/brand. -->
     <ApplicationIcon>Assets\Shotly.ico</ApplicationIcon>
