@@ -1,6 +1,7 @@
 using System.Windows.Controls;
 using System.Windows.Input;
 using Shotly.Core;
+using Shotly.Localization;
 
 namespace Shotly.UI;
 
@@ -16,7 +17,7 @@ public sealed class HotkeyBox : TextBox
         IsReadOnlyCaretVisible = false;
         IsUndoEnabled = false;
         Cursor = Cursors.Arrow;
-        ToolTip = "Нажмите новое сочетание клавиш. Backspace — очистить.";
+        ToolTip = L.HotkeyBoxTip;
     }
 
     public string Gesture

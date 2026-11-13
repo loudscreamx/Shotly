@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Shotly.Native;
+using Shotly.Localization;
 
 namespace Shotly.UI;
 
@@ -52,7 +53,10 @@ public sealed class ToastWindow : Window
             FontSize = 14,
             FontWeight = FontWeights.SemiBold,
             Foreground = error ? Brand.Solid(Color.FromRgb(0xFF, 0x8A, 0x80)) : Brand.TextBrush,
+            // Заголовок в некоторых языках длиннее строки: переносим, но не больше двух строк.
+            TextWrapping = TextWrapping.Wrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = 20 * 2,
         };
         var body = new TextBlock
         {
@@ -78,7 +82,7 @@ public sealed class ToastWindow : Window
             VerticalAlignment = VerticalAlignment.Top,
             Margin = new Thickness(8, -4, -6, 0),
             Cursor = Cursors.Hand,
-            ToolTip = "Закрыть",
+            ToolTip = L.ToastClose,
             Child = Icons.Element(Glyph.Close, Brand.MutedBrush, 12),
         };
         var closeHover = Brand.Solid(Colors.White, 0x1A);

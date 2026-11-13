@@ -19,6 +19,12 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      # Переводы: те же ключи и подстановки, что в en.json. Ошибка здесь понятнее, чем пустая строка в интерфейсе.
+      - name: Check translations
+        env:
+          PYTHONIOENCODING: utf-8
+        run: python tools/check_translations.py
+
       - name: Publish self-contained single-file exe
         run: dotnet publish src/Shotly/Shotly.csproj -c Release -o publish -p:Version=0.2.${{ github.run_number }} -p:UpdateRepository=${{ vars.UPDATES_REPO }}
 

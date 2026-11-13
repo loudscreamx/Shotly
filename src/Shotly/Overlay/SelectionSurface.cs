@@ -7,6 +7,7 @@ using System.Windows.Media.Imaging;
 using Shotly.Capture;
 using Shotly.Core;
 using Shotly.UI;
+using Shotly.Localization;
 
 namespace Shotly.Overlay;
 
@@ -186,7 +187,7 @@ public sealed class SelectionSurface : FrameworkElement
     {
         var text = Text($"{sel.Width} × {sel.Height}", 12, TextBrush, Brand.TextFaceSemiBold);
         // Выделение уже в буфере обмена — говорим об этом прямо в подписи размера.
-        var copied = _session.CopiedSelection == sel ? Text("  ·  в буфере", 12, KeyBrush, Brand.TextFaceSemiBold) : null;
+        var copied = _session.CopiedSelection == sel ? Text(L.SizeCopied, 12, KeyBrush, Brand.TextFaceSemiBold) : null;
         double textWidth = text.WidthIncludingTrailingWhitespace + (copied?.WidthIncludingTrailingWhitespace ?? 0);
         var pill = new Size(textWidth + 18, text.Height + 8);
 
@@ -205,14 +206,16 @@ public sealed class SelectionSurface : FrameworkElement
     private void DrawCloseHint(DrawingContext dc, double w)
     {
         const double padX = 16, padY = 10;
-        var key = Text("Esc", 14, KeyBrush, Brand.TextFaceSemiBold);
-        var rest = Text(" ещё раз — закрыть без сохранения", 14, TextBrush, Brand.TextFace);
-        double textWidth = key.WidthIncludingTrailingWhitespace + rest.WidthIncludingTrailingWhitespace;
-        var pill = new Size(textWidth + 2 * padX, Math.Max(key.Height, rest.Height) + 2 * padY);
+        var (texts, textWidth, textHeight) = Segments(L.HintCloseAgain, 14, TextBrush);
+        var pill = new Size(textWidth + 2 * padX, textHeight + 2 * padY);
         var origin = new Point(Math.Round((w - pill.Width) / 2), 24);
         dc.DrawRoundedRectangle(PillBrush, AccentPen, new Rect(origin, pill), pill.Height / 2, pill.Height / 2);
-        dc.DrawText(key, new Point(origin.X + padX, origin.Y + padY));
-        dc.DrawText(rest, new Point(origin.X + padX + key.WidthIncludingTrailingWhitespace, origin.Y + padY));
+        double x = origin.X + padX;
+        foreach (var t in texts)
+        {
+            dc.DrawText(t, new Point(x, origin.Y + padY));
+            x += t.WidthIncludingTrailingWhitespace;
+        }
     }
 
     private void DrawCrosshair(DrawingContext dc, double w, double h)
@@ -226,21 +229,7 @@ public sealed class SelectionSurface : FrameworkElement
     private void DrawHint(DrawingContext dc, double w)
     {
         const double markSize = 20, gap = 10, padX = 14, padY = 9;
-        var parts = new (string Text, bool Key)[]
-        {
-            ("Выделите область", false), ("  ·  ", false), ("клик", true), (" — весь монитор", false),
-            ("  ·  ", false), ("Esc", true), (" — отмена", false),
-        };
-
-        var texts = new FormattedText[parts.Length];
-        double textWidth = 0, textHeight = 0;
-        for (int i = 0; i < parts.Length; i++)
-        {
-            texts[i] = Text(parts[i].Text, 13, parts[i].Key ? KeyBrush : QuietTextBrush,
-                parts[i].Key ? Brand.TextFaceSemiBold : Brand.TextFace);
-            textWidth += texts[i].WidthIncludingTrailingWhitespace;
-            textHeight = Math.Max(textHeight, texts[i].Height);
-        }
+        var (texts, textWidth, textHeight) = Segments(L.HintSelect, 13, QuietTextBrush);
 
         var pill = new Size(padX + markSize + gap + textWidth + padX, Math.Max(markSize, textHeight) + 2 * padY);
         var origin = new Point(Math.Round((w - pill.Width) / 2), 24);
@@ -254,6 +243,28 @@ public sealed class SelectionSurface : FrameworkElement
             dc.DrawText(t, new Point(x, y));
             x += t.WidthIncludingTrailingWhitespace;
         }
+    }
+
+    /// <summary>
+    /// Подсказка из перевода: клавиши в нём отмечены звёздочками (*Esc*) и рисуются янтарным полужирным.
+    /// Так порядок слов в каждом языке свой, а выделение клавиш остаётся.
+    /// </summary>
+    private (FormattedText[] Texts, double Width, double Height) Segments(string markup, double size, Brush brush)
+    {
+        var parts = markup.Split('*');
+        var texts = new System.Collections.Generic.List<FormattedText>();
+        double width = 0, height = 0;
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (parts[i].Length == 0)
+                continue;
+            bool key = i % 2 == 1;
+            var t = Text(parts[i], size, key ? KeyBrush : brush, key ? Brand.TextFaceSemiBold : Brand.TextFace);
+            texts.Add(t);
+            width += t.WidthIncludingTrailingWhitespace;
+            height = Math.Max(height, t.Height);
+        }
+        return (texts.ToArray(), width, height);
     }
 
     private FormattedText Text(string value, double size, Brush brush, Typeface face) =>

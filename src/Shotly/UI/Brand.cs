@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using Shotly.Localization;
 
 namespace Shotly.UI;
 
@@ -40,13 +41,54 @@ public static class Brand
     /// <summary>
     /// Onest для текста интерфейса, Unbounded для заголовков. Шрифты встроены в exe (Assets/Fonts, лицензия OFL),
     /// а если их по какой-то причине не удалось загрузить, WPF возьмёт следующий шрифт из списка.
-    /// </summary>
-    public static readonly FontFamily TextFont = Font("Onest", "Segoe UI Variable Text, Segoe UI");
-    public static readonly FontFamily DisplayFont = Font("Unbounded", "Segoe UI Variable Display, Segoe UI");
+    /// <remarks>
+    /// В фирменных шрифтах нет иероглифов, поэтому для китайского, японского и корейского сразу за ними
+    /// идёт системный шрифт этого языка: латиница и цифры остаются в Onest, иероглифы — в правильном начертании
+    /// (иначе Windows подставит первый попавшийся шрифт). Набор пересобирается при смене языка.
+    /// </remarks>
+    public static FontFamily TextFont => CurrentFonts.Text;
+    public static FontFamily DisplayFont => CurrentFonts.Display;
 
-    public static readonly Typeface TextFace = new(TextFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-    public static readonly Typeface TextFaceMedium = new(TextFont, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
-    public static readonly Typeface TextFaceSemiBold = new(TextFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    public static Typeface TextFace => CurrentFonts.Face;
+    public static Typeface TextFaceMedium => CurrentFonts.FaceMedium;
+    public static Typeface TextFaceSemiBold => CurrentFonts.FaceSemiBold;
+
+    /// <summary>Ключ ресурса со шрифтом текста для стилей Themes/Shotly.xaml (DynamicResource: меняется вместе с языком).</summary>
+    public const string TextFontKey = "Font.Text";
+
+    private static FontSet? _fonts;
+
+    private static FontSet CurrentFonts
+    {
+        get
+        {
+            var language = Loc.Current;
+            if (_fonts is null || _fonts.Language != language)
+                _fonts = new FontSet(language);
+            return _fonts;
+        }
+    }
+
+    private sealed class FontSet
+    {
+        public FontSet(LanguageInfo language)
+        {
+            Language = language;
+            var local = language.WpfFont.Length > 0 ? language.WpfFont + ", " : string.Empty;
+            Text = Font("Onest", local + "Segoe UI Variable Text, Segoe UI");
+            Display = Font("Unbounded", local + "Segoe UI Variable Display, Segoe UI");
+            Face = new Typeface(Text, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+            FaceMedium = new Typeface(Text, FontStyles.Normal, FontWeights.Medium, FontStretches.Normal);
+            FaceSemiBold = new Typeface(Text, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+        }
+
+        public LanguageInfo Language { get; }
+        public FontFamily Text { get; }
+        public FontFamily Display { get; }
+        public Typeface Face { get; }
+        public Typeface FaceMedium { get; }
+        public Typeface FaceSemiBold { get; }
+    }
 
     private static readonly Lazy<DrawingImage> MarkImage = new(CreateMark);
 

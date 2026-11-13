@@ -42,7 +42,7 @@
         <Setter Property="Foreground" Value="{StaticResource Brush.Text}" />
         <Setter Property="Background" Value="{StaticResource Brush.Coal}" />
         <Setter Property="BorderBrush" Value="{StaticResource Brush.LineStrong}" />
-        <Setter Property="FontFamily" Value="{x:Static ui:Brand.TextFont}" />
+        <Setter Property="FontFamily" Value="{DynamicResource Font.Text}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="HasDropShadow" Value="False" />
         <Setter Property="Template">

@@ -49,6 +49,8 @@
     <EmbeddedResource Include="Assets\TrayLight.ico" LogicalName="TrayLight.ico" />
     <!-- Фирменные шрифты (брендбук): Onest для текста, Unbounded для заголовков. Лицензия OFL, тексты лежат рядом. -->
     <Resource Include="Assets\Fonts\*.ttf" />
+    <!-- Переводы интерфейса: по файлу на язык, en.json — эталон. Как добавить язык: docs/TRANSLATING.md. -->
+    <EmbeddedResource Include="Localization\Languages\*.json" LogicalName="Shotly.Languages.%(Filename).json" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(UpdateRepository)' != ''">

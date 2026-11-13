@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using Microsoft.Win32;
+using Shotly.Localization;
 
 namespace Shotly.Core;
 
@@ -14,7 +15,7 @@ public static class Installation
 {
     private const string UninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\Shotly";
 
-    public static string ExePath => Environment.ProcessPath ?? throw new InvalidOperationException("Не удалось определить путь к Shotly.exe.");
+    public static string ExePath => Environment.ProcessPath ?? throw new InvalidOperationException(L.ExePathUnknown);
 
     public static string Version
     {

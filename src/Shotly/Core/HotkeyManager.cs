@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using Shotly.Native;
+using Shotly.Localization;
 
 namespace Shotly.Core;
 
@@ -36,7 +37,7 @@ public sealed class HotkeyManager : IDisposable
     public string? Register(string gesture, Action action)
     {
         if (!TryParse(gesture, out var modifiers, out var vk))
-            return $"«{gesture}»: не удалось разобрать сочетание";
+            return L.HotkeyParseError(gesture);
 
         int id = _nextId++;
         if (!NativeMethods.RegisterHotKey(_source.Handle, id, modifiers | NativeMethods.MOD_NOREPEAT, vk))
@@ -51,15 +52,14 @@ public sealed class HotkeyManager : IDisposable
     /// <summary>Объяснение, кто обычно занимает сочетание. У PrtScn в Windows 11 свои частые «владельцы».</summary>
     private static string BusyMessage(string gesture, uint modifiers, uint vk)
     {
-        var name = $"«{Display(gesture)}»";
+        var name = Display(gesture);
         if (vk != VkSnapshot)
-            return $"{name}: сочетание уже занято другой программой";
+            return L.HotkeyBusy(name);
         if ((modifiers & NativeMethods.MOD_WIN) != 0)
-            return $"{name}: это системное сочетание Windows, его нельзя переназначить";
+            return L.HotkeySystem(name);
         if (modifiers == 0)
-            return $"{name}: клавишу занимают «Ножницы». Выключите в Windows: Параметры → Специальные возможности → " +
-                   "Клавиатура → «Использовать клавишу Print Screen для захвата экрана»";
-        return $"{name}: сочетание уже занято другой программой (часто это OneDrive, Яндекс Диск, Lightshot или ShareX)";
+            return L.HotkeySnipping(name);
+        return L.HotkeyBusyPrintScreen(name);
     }
 
     /// <summary>Подпись для меню и сообщений: «Ctrl+PrintScreen» → «Ctrl+PrtScn».</summary>
