@@ -58,7 +58,7 @@ Settings, autostart and update checks are in the tray icon menu.
 
 | | |
 | --- | --- |
-| ✂️ **Area capture** | Dimmed screen, a frame with its size in pixels, crosshair. Click without dragging to capture the whole monitor. The selection goes straight to the clipboard |
+| ✂️ **Area capture** | Dimmed screen, a frame with its size in pixels, crosshair, all in the brand colors. Click without dragging to capture the whole monitor. The selection goes straight to the clipboard |
 | 🪟 **Window and screen** | The active window or the whole monitor under the cursor with one shortcut, with a flash frame around what was captured |
 | 🔁 **Repeat area** | Capture the same area again — handy for a series of shots |
 | ✏️ **Editor on top of the selection** | Arrow, box, brush, highlighter, text, area and brush blur, pixelate, 6 colors plus a custom one, undo and redo |
@@ -134,7 +134,6 @@ The old defaults (Ctrl+Shift+S/W/F/R) are replaced with the new ones on update; 
 ## Planned
 
 - Highlight the window under the cursor while selecting
-- Overlay in the brand colors
 
 ## For developers
 
