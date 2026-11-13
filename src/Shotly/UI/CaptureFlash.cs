@@ -133,14 +133,14 @@ public sealed class CaptureFlash : Window
 
     private void Animate()
     {
-        // Вспышка: светлая заливка гаснет за 220 мс, рамка держится чуть дольше и уходит к 650 мс.
-        var wash = new DoubleAnimation(0.32, 0, TimeSpan.FromMilliseconds(220)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
+        // Вспышка: светлая заливка гаснет за 300 мс, рамка держится чуть дольше и уходит к 850 мс.
+        var wash = new DoubleAnimation(0.45, 0, TimeSpan.FromMilliseconds(300)) { EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut } };
         _surface.BeginAnimation(FlashSurface.WashProperty, wash);
 
-        var fade = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(650) };
+        var fade = new DoubleAnimationUsingKeyFrames { Duration = TimeSpan.FromMilliseconds(850) };
         fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.Zero)));
-        fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(330))));
-        fade.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(650)), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
+        fade.KeyFrames.Add(new LinearDoubleKeyFrame(1, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(450))));
+        fade.KeyFrames.Add(new EasingDoubleKeyFrame(0, KeyTime.FromTimeSpan(TimeSpan.FromMilliseconds(850)), new QuadraticEase { EasingMode = EasingMode.EaseIn }));
         fade.Completed += (_, _) => SafeClose();
         BeginAnimation(OpacityProperty, fade);
     }
@@ -167,7 +167,7 @@ public sealed class CaptureFlash : Window
             nameof(Wash), typeof(double), typeof(FlashSurface),
             new FrameworkPropertyMetadata(0.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
-        private const double Thickness = 4; // DIP: на 100% и 200% рамка выглядит одинаково
+        private const double Thickness = 6; // DIP: на 100% и 200% рамка выглядит одинаково
         private readonly PxRect _region;
         private readonly PxRect _piece;
         private readonly Sides _sides;
