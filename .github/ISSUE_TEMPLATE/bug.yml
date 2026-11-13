@@ -1,0 +1,43 @@
+name: Ошибка
+description: Что-то работает не так, как должно
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось
+      description: Что вы делали, что ожидали увидеть и что произошло на самом деле.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: |
+        1. Нажать Ctrl+PrtScn
+        2. Выделить область на втором мониторе
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: Версия Shotly
+      description: Меню трея (вверху) или окно настроек
+      placeholder: 0.2.48
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Версия Windows
+      placeholder: Windows 11 24H2
+  - type: input
+    id: monitors
+    attributes:
+      label: Мониторы и масштаб
+      placeholder: "2 монитора: 2560×1440 150 %, 1920×1080 100 %"
+  - type: textarea
+    id: log
+    attributes:
+      label: Лог (если есть)
+      description: "%LOCALAPPDATA%\\Shotly\\shotly.log. Просмотрите перед отправкой: там могут быть пути к вашим папкам."
+      render: text

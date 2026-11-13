@@ -105,9 +105,9 @@ jobs:
             --title "Shotly $env:VERSION" `
             --notes "Сборка из main (коммит $env:GITHUB_SHA). Скачайте Shotly.exe ниже и запустите: установка не нужна."
 
-      # Репозиторий Shotly закрыт, а программа без токена не может читать его релизы.
-      # Если задан секрет UPDATES_TOKEN и переменная UPDATES_REPO (открытый репозиторий только для exe),
-      # тот же релиз публикуется и туда — оттуда его скачивает встроенное обновление.
+      # Необязательно: если заданы секрет UPDATES_TOKEN и переменная UPDATES_REPO (отдельный открытый
+      # репозиторий только для exe), тот же релиз публикуется и туда, и встроенное обновление берёт его оттуда.
+      # Для открытого репозитория Shotly это не нужно: обновление читает его релизы напрямую.
       - name: Publish to public updates repository
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.UPDATES_REPO != ''
         shell: pwsh

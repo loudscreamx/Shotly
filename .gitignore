@@ -4,3 +4,17 @@ publish/
 .vs/
 *.user
 *.suo
+
+# Python (tools/)
+__pycache__/
+*.pyc
+
+# IDE и система
+.idea/
+.vscode/
+*.DotSettings.user
+Thumbs.db
+.DS_Store
+
+# Подпись в CI
+signed/

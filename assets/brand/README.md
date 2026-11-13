@@ -1,6 +1,6 @@
 # Бренд Shotly
 
-Утверждено 07.11.2026. Полный брендбук: https://claude.ai/artifact/E7aqNv8qUP8rE7JiKzSLvG
+Утверждено 07.11.2026.
 
 ## Знак и логотип
 

@@ -149,4 +149,5 @@ assets/brand/            логотип, цвета и шрифты (README вн
 
 </details>
 
+Хотите помочь — [CONTRIBUTING.md](CONTRIBUTING.md). Нашли уязвимость — [SECURITY.md](SECURITY.md).
 Логотип, цвета и шрифты: [assets/brand](assets/brand/README.md). Лицензия: [MIT](LICENSE).
