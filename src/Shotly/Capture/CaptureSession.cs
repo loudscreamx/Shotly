@@ -33,6 +33,7 @@ public sealed class CaptureSession
     private DispatcherTimer? _escDisarm;
 
     private readonly IDictionary<string, double>? _editorSizes;
+    private readonly WindowFinder _windows;
 
     /// <param name="copyOnSelect">
     /// Если задано — каждое готовое выделение сразу копируется в буфер обмена (возвращает false, если не вышло).
@@ -43,12 +44,20 @@ public sealed class CaptureSession
         Snapshot = snapshot;
         _copyOnSelect = copyOnSelect;
         _editorSizes = editorSizes;
+        // Сразу после снимка и до показа оверлеев: список окон совпадает с кадром и не содержит наших окон.
+        _windows = WindowFinder.Collect(snapshot);
     }
 
     public Snapshot Snapshot { get; }
     public PxRect? Selection { get; private set; }
     public SelectionState State { get; private set; } = SelectionState.Idle;
     public (int X, int Y) Cursor { get; private set; }
+
+    /// <summary>
+    /// Что снимет клик без перетаскивания: окно под курсором, а на пустом рабочем столе — весь монитор.
+    /// Оверлеи подсвечивают эту область, пока выделения нет. Null — подсветки нет (выделение уже есть).
+    /// </summary>
+    public PxRect? Hover { get; private set; }
 
     /// <summary>Редактор: появляется, когда пользователь переходит к правке выделения.</summary>
     public EditorState? Editor { get; private set; }
@@ -67,6 +76,7 @@ public sealed class CaptureSession
         try
         {
             Cursor = ScreenCapture.CursorPosition();
+            Hover = ClickTarget(Cursor.X, Cursor.Y);
             foreach (var monitor in Snapshot.Monitors)
             {
                 var overlay = new OverlayWindow(this, monitor);
@@ -109,8 +119,10 @@ public sealed class CaptureSession
         }
         else
         {
+            // Подсветку оставляем, пока мышь не сдвинулась: отпустят на месте — снимем подсвеченное.
             State = SelectionState.Dragging;
             _anchor = p;
+            Hover = ClickTarget(p.X, p.Y);
             Selection = new PxRect(p.X, p.Y, 0, 0);
         }
 
@@ -137,9 +149,15 @@ public sealed class CaptureSession
 
         switch (State)
         {
+            case SelectionState.Idle:
+                Hover = ClickTarget(p.X, p.Y);
+                break;
             case SelectionState.Dragging:
                 // +1: курсор включает пиксель, на котором стоит.
                 var r = PxRect.FromPoints(_anchor.X, _anchor.Y, p.X, p.Y);
+                if (Hover is not null && r.Width < MinSize && r.Height < MinSize)
+                    break; // дрожание руки при клике — ещё не выделение, подсветка остаётся
+                Hover = null;
                 Selection = new PxRect(r.X, r.Y, r.Width + 1, r.Height + 1).Intersect(Snapshot.VirtualBounds);
                 break;
             case SelectionState.Moving:
@@ -173,10 +191,11 @@ public sealed class CaptureSession
         {
             if (Selection is not { } sel || sel.Width < MinSize || sel.Height < MinSize)
             {
-                // Клик без перетаскивания = весь монитор под курсором.
-                Selection = Monitors.FromPoint(Snapshot.Monitors, Cursor.X, Cursor.Y).Bounds;
+                // Клик без перетаскивания = подсвеченное окно, а на рабочем столе — весь монитор.
+                Selection = Hover ?? ClickTarget(_anchor.X, _anchor.Y);
             }
 
+            Hover = null;
             State = SelectionState.Selected;
         }
         else if (State == SelectionState.Moving)
@@ -194,6 +213,10 @@ public sealed class CaptureSession
         Changed?.Invoke();
         CommitSelection(pulse);
     }
+
+    /// <summary>Окно под точкой, а если там только рабочий стол — монитор целиком.</summary>
+    private PxRect ClickTarget(int x, int y) =>
+        _windows.At(x, y) ?? Monitors.FromPoint(Snapshot.Monitors, x, y).Bounds;
 
     /// <summary>
     /// Готовое выделение: вспышка рамки, а если включено — сразу копия в буфер обмена.
@@ -291,6 +314,7 @@ public sealed class CaptureSession
         {
             Selection = null;
             State = SelectionState.Idle;
+            Hover = ClickTarget(Cursor.X, Cursor.Y);
             Changed?.Invoke();
         }
         else

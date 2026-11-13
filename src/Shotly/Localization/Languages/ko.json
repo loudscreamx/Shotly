@@ -68,7 +68,7 @@
   "MenuUninstall": "Shotly 제거…",
   "MenuExit": "종료",
 
-  "HintSelect": "영역 선택  ·  *클릭* — 모니터 전체  ·  *Esc* — 취소",
+  "HintSelect": "영역 선택  ·  *클릭* — 커서 아래 창 또는 모니터 전체  ·  *Esc* — 취소",
   "HintCloseAgain": "*Esc* 한 번 더 — 저장하지 않고 닫기",
   "SizeCopied": "  ·  복사됨",
 

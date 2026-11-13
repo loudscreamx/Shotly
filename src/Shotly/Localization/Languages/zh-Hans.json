@@ -68,7 +68,7 @@
   "MenuUninstall": "卸载 Shotly…",
   "MenuExit": "退出",
 
-  "HintSelect": "选择区域  ·  *单击* — 整个显示器  ·  *Esc* — 取消",
+  "HintSelect": "选择区域  ·  *单击* — 光标下的窗口或整个显示器  ·  *Esc* — 取消",
   "HintCloseAgain": "再按一次 *Esc* — 不保存并关闭",
   "SizeCopied": "  ·  已复制",
 
