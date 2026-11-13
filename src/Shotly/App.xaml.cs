@@ -79,7 +79,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
             SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
 
             _hotkeys = new HotkeyManager();
-            RegisterHotkeys();
+            RegisterHotkeys(checkSnippingKey: true);
 
             _exitEvent = ListenForSignal(ExitEventName, () => Shutdown());
             _showSettingsEvent = ListenForSignal(ShowSettingsEventName, OpenSettings);
@@ -128,12 +128,39 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         base.OnExit(e);
     }
 
-    private void RegisterHotkeys()
+    private void RegisterHotkeys(bool checkSnippingKey = false)
     {
-        foreach (var error in TryRegisterHotkeys())
-        {
+        var errors = TryRegisterHotkeys();
+        foreach (var error in errors)
             Log.Error($"Горячая клавиша не зарегистрирована: {error}");
+
+        // Одиночную PrtScn при включённом параметре Windows забирают «Ножницы», хотя регистрация
+        // обычно проходит без ошибки. Вместо молчания предлагаем отдать клавишу Shotly одним щелчком.
+        if (checkSnippingKey && SnippingKey.Conflicts(_settings.Hotkeys))
+        {
+            Log.Error("Одиночную PrtScn перехватывают «Ножницы» (PrintScreenKeyForSnippingEnabled)");
+            _tray?.Notify("PrtScn открывает «Ножницы»",
+                "Windows отдаёт эту клавишу своим «Ножницам». Нажмите, чтобы Shotly получал её.",
+                OfferToFreePrintScreen);
+            return;
+        }
+
+        foreach (var error in errors)
             _tray?.Notify("Горячая клавиша недоступна", error + ". Её можно поменять в настройках.", error: true);
+    }
+
+    private void OfferToFreePrintScreen()
+    {
+        if (_settingsWindow is { } open)
+        {
+            open.Activate(); // в окне настроек сочетания сняты; там же и спросим при сохранении
+            return;
+        }
+        if (SnippingKey.OfferToDisable(null))
+        {
+            RegisterHotkeys(); // если Windows держала клавишу, регистрация теперь пройдёт
+            _tray?.Notify("PrtScn теперь у Shotly",
+                "Если «Ножницы» всё ещё открываются, выключите параметр в Windows вручную через настройки Shotly.");
         }
     }
 

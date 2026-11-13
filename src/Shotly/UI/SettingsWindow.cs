@@ -232,15 +232,7 @@ public sealed class SettingsWindow : Window
                    "«Использовать клавишу Print Screen для захвата экрана». ",
         };
         var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Открыть параметры"));
-        link.Click += (_, _) =>
-        {
-            try
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:easeofaccess-keyboard")
-                    { UseShellExecute = true });
-            }
-            catch (Exception ex) { Log.Error("Не удалось открыть параметры клавиатуры", ex); }
-        };
+        link.Click += (_, _) => SnippingKey.OpenSettings();
         hint.Inlines.Add(link);
         return hint;
     }
@@ -330,7 +322,16 @@ public sealed class SettingsWindow : Window
         _draft.CheckUpdates = _checkUpdates.IsChecked == true;
         _draft.CopyOnSelect = _copyOnSelect.IsChecked == true;
 
-        var errors = _host.Apply(_draft, _autostart.IsChecked == true);
+        // Одиночная PrtScn: регистрация в Windows пройдёт, но нажатия заберут «Ножницы». Спрашиваем сразу,
+        // до применения, чтобы проверка сочетаний шла уже с освобождённой клавишей.
+        string? snippingWarning = null;
+        if (SnippingKey.Conflicts(_draft.Hotkeys) && !SnippingKey.OfferToDisable(this))
+            snippingWarning = "PrtScn сохранена, но пока её перехватывают «Ножницы» Windows. Выключите параметр " +
+                              "по ссылке выше или назначьте сочетание с Ctrl, Alt или Shift.";
+
+        var errors = new System.Collections.Generic.List<string>(_host.Apply(_draft, _autostart.IsChecked == true));
+        if (snippingWarning is not null)
+            errors.Insert(0, snippingWarning);
         if (errors.Count > 0)
         {
             // Настройки сохранены, но о проблемах нужно сказать, не закрывая окно.

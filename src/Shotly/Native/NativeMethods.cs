@@ -210,4 +210,14 @@ internal static class NativeMethods
     [DllImport("kernel32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr min, IntPtr max);
+
+    // ---- Оповещение об изменении параметров ---------------------------------------------
+
+    public static readonly IntPtr HWND_BROADCAST = new(0xFFFF);
+    public const int WM_SETTINGCHANGE = 0x001A;
+    public const uint SMTO_ABORTIFHUNG = 0x0002;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true, EntryPoint = "SendMessageTimeoutW")]
+    public static extern IntPtr SendMessageTimeout(IntPtr hWnd, int msg, IntPtr wParam, string lParam,
+        uint flags, uint timeout, out IntPtr result);
 }
