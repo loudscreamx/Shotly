@@ -130,38 +130,38 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
     private void RegisterHotkeys(bool checkSnippingKey = false)
     {
-        var errors = TryRegisterHotkeys();
-        foreach (var error in errors)
-            Log.Error($"Горячая клавиша не зарегистрирована: {error}");
-
         // Одиночную PrtScn при включённом параметре Windows забирают «Ножницы», хотя регистрация
-        // обычно проходит без ошибки. Вместо молчания предлагаем отдать клавишу Shotly одним щелчком.
-        if (checkSnippingKey && SnippingKey.Conflicts(_settings.Hotkeys))
-        {
-            Log.Error("Одиночную PrtScn перехватывают «Ножницы» (PrintScreenKeyForSnippingEnabled)");
-            _tray?.Notify("PrtScn открывает «Ножницы»",
-                "Windows отдаёт эту клавишу своим «Ножницам». Нажмите, чтобы Shotly получал её.",
-                OfferToFreePrintScreen);
-            return;
-        }
+        // обычно проходит без ошибки. Если она назначена Shotly, сразу отдаём клавишу Shotly.
+        if (checkSnippingKey)
+            FreePrintScreenIfNeeded();
 
-        foreach (var error in errors)
+        foreach (var error in TryRegisterHotkeys())
+        {
+            Log.Error($"Горячая клавиша не зарегистрирована: {error}");
             _tray?.Notify("Горячая клавиша недоступна", error + ". Её можно поменять в настройках.", error: true);
+        }
     }
 
-    private void OfferToFreePrintScreen()
+    /// <summary>
+    /// Выключает перехват PrtScn «Ножницами», если Shotly назначена одиночная PrtScn, и сообщает об этом.
+    /// Возвращает текст ошибки, если выключить не удалось, иначе null.
+    /// </summary>
+    private string? FreePrintScreenIfNeeded()
     {
-        if (_settingsWindow is { } open)
+        if (!SnippingKey.Conflicts(_settings.Hotkeys))
+            return null;
+
+        if (SnippingKey.TryDisable())
         {
-            open.Activate(); // в окне настроек сочетания сняты; там же и спросим при сохранении
-            return;
-        }
-        if (SnippingKey.OfferToDisable(null))
-        {
-            RegisterHotkeys(); // если Windows держала клавишу, регистрация теперь пройдёт
             _tray?.Notify("PrtScn теперь у Shotly",
-                "Если «Ножницы» всё ещё открываются, выключите параметр в Windows вручную через настройки Shotly.");
+                "В Windows выключено открытие «Ножниц» по PrtScn. Вернуть можно в Параметры → Специальные возможности → Клавиатура.");
+            return null;
         }
+
+        const string error = "PrtScn перехватывают «Ножницы», и выключить это автоматически не получилось. " +
+                             "Выключите в Windows «Использовать клавишу Print Screen для захвата экрана»";
+        _tray?.Notify("PrtScn открывает «Ножницы»", error + ". Нажмите, чтобы открыть параметры.", SnippingKey.OpenSettings);
+        return error;
     }
 
     /// <summary>Регистрирует все сочетания заново. Пустое сочетание означает «не назначено».</summary>
@@ -443,6 +443,10 @@ public partial class App : Application, ITrayCommands, ISettingsHost
             Log.Error("Не удалось изменить автозапуск", ex);
             errors.Add("Автозапуск не изменён: " + ex.Message);
         }
+
+        // Одиночная PrtScn: регистрация пройдёт, но нажатия заберут «Ножницы», поэтому сразу отдаём её Shotly.
+        if (FreePrintScreenIfNeeded() is { } snippingError)
+            errors.Add(snippingError + ".");
 
         // Проверяем, что сочетания свободны, и снова снимаем их, пока окно открыто.
         errors.AddRange(TryRegisterHotkeys());

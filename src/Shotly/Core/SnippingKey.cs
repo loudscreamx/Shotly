@@ -1,5 +1,4 @@
 using System;
-using System.Windows;
 using Microsoft.Win32;
 using Shotly.Native;
 
@@ -47,7 +46,7 @@ public static class SnippingKey
         // Сообщаем оболочке, что параметры изменились, чтобы она перечитала их без перезахода в систему.
         NativeMethods.SendMessageTimeout(NativeMethods.HWND_BROADCAST, NativeMethods.WM_SETTINGCHANGE, IntPtr.Zero,
             KeyPath, NativeMethods.SMTO_ABORTIFHUNG, 1000, out _);
-        Log.Info("Параметр «Использовать клавишу Print Screen для захвата экрана» выключен по просьбе пользователя");
+        Log.Info("Параметр «Использовать клавишу Print Screen для захвата экрана» выключен: PrtScn назначена Shotly");
     }
 
     /// <summary>Есть ли среди сочетаний одиночная PrtScn без модификаторов.</summary>
@@ -68,23 +67,9 @@ public static class SnippingKey
     /// <summary>Конфликт есть: Shotly назначена одиночная PrtScn, а Windows отдаёт её «Ножницам».</summary>
     public static bool Conflicts(HotkeySettings h) => IsUsedBy(h) && IsEnabled;
 
-    /// <summary>
-    /// Спрашивает разрешения и выключает параметр. Возвращает true, если клавиша теперь свободна для Shotly.
-    /// Без согласия пользователя ничего в системе не меняет.
-    /// </summary>
-    public static bool OfferToDisable(Window? owner)
+    /// <summary>Выключает параметр. Возвращает false, если запись в реестр не удалась.</summary>
+    public static bool TryDisable()
     {
-        const string text =
-            "Клавиша PrtScn сейчас открывает «Ножницы» Windows, поэтому Shotly её не получает.\n\n" +
-            "Выключить в Windows параметр «Использовать клавишу Print Screen для захвата экрана»? " +
-            "Меняется только он и только для вашей учётной записи. Вернуть можно в Параметры → " +
-            "Специальные возможности → Клавиатура.";
-        var answer = owner is not null
-            ? MessageBox.Show(owner, text, "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes)
-            : MessageBox.Show(text, "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.Yes);
-        if (answer != MessageBoxResult.Yes)
-            return false;
-
         try
         {
             Disable();
@@ -93,13 +78,6 @@ public static class SnippingKey
         catch (Exception ex)
         {
             Log.Error("Не удалось выключить параметр клавиши Print Screen", ex);
-            const string failed = "Не получилось изменить параметр автоматически. Сейчас откроются параметры клавиатуры: " +
-                                  "выключите там «Использовать клавишу Print Screen для захвата экрана».";
-            if (owner is not null)
-                MessageBox.Show(owner, failed, "Shotly", MessageBoxButton.OK, MessageBoxImage.Warning);
-            else
-                MessageBox.Show(failed, "Shotly", MessageBoxButton.OK, MessageBoxImage.Warning);
-            OpenSettings();
             return false;
         }
     }
