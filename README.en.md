@@ -58,8 +58,9 @@ Settings, autostart and update checks are in the tray icon menu.
 
 | | |
 | --- | --- |
-| ✂️ **Area capture** | Dimmed screen, a frame with its size in pixels, crosshair, all in the brand colors. Click without dragging to capture the whole monitor. The selection goes straight to the clipboard |
-| 🪟 **Window and screen** | The active window or the whole monitor under the cursor with one shortcut, with a flash frame around what was captured |
+| ✂️ **Area capture** | Dimmed screen, a frame with its size in pixels, crosshair, all in the brand colors. The selection goes straight to the clipboard |
+| 🪟 **Window under the cursor** | While selecting, the window under the mouse is highlighted with a frame: click and exactly that window is captured, no manual selection. On the empty desktop, a click captures the whole monitor |
+| 🖼️ **Window and screen with one shortcut** | The active window or the whole monitor under the cursor, with a flash frame around what was captured |
 | 🔁 **Repeat area** | Capture the same area again — handy for a series of shots |
 | ✏️ **Editor on top of the selection** | Arrow, box, brush, highlighter, text, area and brush blur, pixelate, 6 colors plus a custom one, undo and redo |
 | 🖥️ **Multiple monitors** | Different DPI on each monitor, a separate overlay for each (Per-Monitor V2) |
@@ -88,6 +89,7 @@ Shortcuts can be changed in settings (tray menu → “Settings…”).
 
 | Action | Keys |
 | --- | --- |
+| Capture the window under the cursor (the whole monitor on the desktop) | click without dragging |
 | Copy and close | <kbd>Enter</kbd> or <kbd>Ctrl</kbd> + <kbd>C</kbd>, double-click the selection |
 | Save to file | <kbd>Ctrl</kbd> + <kbd>S</kbd> |
 | Close | <kbd>Esc</kbd> |
@@ -130,10 +132,6 @@ in Windows and shows a notification. You can turn it back on in “Settings → 
 The old defaults (Ctrl+Shift+S/W/F/R) are replaced with the new ones on update; custom shortcuts are left untouched.
 
 </details>
-
-## Planned
-
-- Highlight the window under the cursor while selecting
 
 ## For developers
 

@@ -68,7 +68,7 @@
   "MenuUninstall": "Shotly deinstallieren…",
   "MenuExit": "Beenden",
 
-  "HintSelect": "Bereich auswählen  ·  *Klick* — ganzer Monitor  ·  *Esc* — abbrechen",
+  "HintSelect": "Bereich auswählen  ·  *Klick* — Fenster unter dem Mauszeiger oder ganzer Monitor  ·  *Esc* — abbrechen",
   "HintCloseAgain": "Noch einmal *Esc* — ohne Speichern schließen",
   "SizeCopied": "  ·  kopiert",
 

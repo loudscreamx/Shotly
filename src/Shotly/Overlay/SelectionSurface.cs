@@ -90,8 +90,11 @@ public sealed class SelectionSurface : FrameworkElement
         var full = new Rect(0, 0, w, h);
         dc.DrawImage(_background, full);
 
-        PxRect? selection = _session.Selection;
-        var visible = selection is { } s ? s.Intersect(_monitor.Bounds) : default;
+        PxRect? selection = _session.Selection is { IsEmpty: false } s ? s : null;
+        // Пока выделения нет, «дырка» в затемнении — под окном, которое снимет клик.
+        PxRect? hover = selection is null && _session.Hover is { IsEmpty: false } hv ? hv : null;
+        var lit = selection ?? hover;
+        var visible = lit is { } l ? l.Intersect(_monitor.Bounds) : default;
 
         // Затемнение с «дыркой» под выделение.
         var dim = new GeometryGroup { FillRule = FillRule.EvenOdd };
@@ -100,10 +103,10 @@ public sealed class SelectionSurface : FrameworkElement
             dim.Children.Add(new RectangleGeometry(ToLocal(visible)));
         dc.DrawGeometry(DimBrush, null, dim);
 
-        if (selection is { } sel && !sel.IsEmpty)
+        if (selection is { } sel)
         {
             var local = ToLocal(sel);
-            DrawFrame(dc, sel, local);
+            DrawFrame(dc, sel, local, Pulse);
 
             if (_session.Editor is { } editor && !visible.IsEmpty)
                 DrawAnnotations(dc, editor, visible);
@@ -116,10 +119,21 @@ public sealed class SelectionSurface : FrameworkElement
                 && Monitors.FromPoint(_session.Snapshot.Monitors, sel.X, sel.Y) == _monitor)
                 DrawSizeLabel(dc, local, sel);
         }
-        else if (_monitor.Bounds.Contains(_session.Cursor.X, _session.Cursor.Y))
+        else
         {
-            DrawCrosshair(dc, w, h);
-            DrawHint(dc, w);
+            if (hover is { } hw && !visible.IsEmpty)
+            {
+                var local = ToLocal(hw);
+                DrawFrame(dc, hw, local, 0);
+                if (Monitors.FromPoint(_session.Snapshot.Monitors, hw.X, hw.Y) == _monitor)
+                    DrawSizeLabel(dc, local, hw);
+            }
+
+            if (_monitor.Bounds.Contains(_session.Cursor.X, _session.Cursor.Y))
+            {
+                DrawCrosshair(dc, w, h);
+                DrawHint(dc, w);
+            }
         }
     }
 
@@ -128,9 +142,8 @@ public sealed class SelectionSurface : FrameworkElement
     /// Но если снаружи нет экрана (выделение по краю монитора, клик «весь монитор»), эта сторона
     /// ушла бы за край и рамки не было бы видно совсем — такие стороны рисуем внутри.
     /// </summary>
-    private void DrawFrame(DrawingContext dc, PxRect sel, Rect local)
+    private void DrawFrame(DrawingContext dc, PxRect sel, Rect local, double pulse)
     {
-        double pulse = Pulse;
         var pen = pulse > 0.001
             ? new Pen(FrameBrush(local), AccentPen.Thickness + 4 * pulse)
             : AccentPen;

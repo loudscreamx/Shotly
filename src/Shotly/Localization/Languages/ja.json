@@ -68,7 +68,7 @@
   "MenuUninstall": "Shotly をアンインストール…",
   "MenuExit": "終了",
 
-  "HintSelect": "範囲を選択  ·  *クリック* — モニター全体  ·  *Esc* — キャンセル",
+  "HintSelect": "範囲を選択  ·  *クリック* — カーソル下のウィンドウまたはモニター全体  ·  *Esc* — キャンセル",
   "HintCloseAgain": "もう一度 *Esc* — 保存せずに閉じる",
   "SizeCopied": "  ·  コピー済み",
 

@@ -143,16 +143,7 @@ public static class ScreenCapture
             || IsTaskbar(hwnd))
             return null;
 
-        NativeMethods.RECT rc;
-        if (NativeMethods.DwmGetWindowAttribute(hwnd, NativeMethods.DWMWA_EXTENDED_FRAME_BOUNDS,
-                out rc, Marshal.SizeOf<NativeMethods.RECT>()) != 0)
-        {
-            if (!NativeMethods.GetWindowRect(hwnd, out rc))
-                return null;
-        }
-
-        var rect = Monitors.ToPx(rc);
-        return rect.IsEmpty ? null : rect;
+        return WindowFinder.Bounds(hwnd);
     }
 
     private static bool IsTaskbar(IntPtr hwnd)

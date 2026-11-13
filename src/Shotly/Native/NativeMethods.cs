@@ -63,6 +63,20 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetDesktopWindow();
 
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool IsZoomed(IntPtr hWnd);
+
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    /// <summary>Перебирает окна верхнего уровня в порядке Z: от самого верхнего к нижнему.</summary>
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
     public static readonly IntPtr HWND_TOPMOST = new(-1);
     public const uint SWP_NOACTIVATE = 0x0010;
     public const uint SWP_NOOWNERZORDER = 0x0200;
@@ -201,6 +215,15 @@ internal static class NativeMethods
 
     [DllImport("dwmapi.dll")]
     public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
+
+    /// <summary>
+    /// Окно «спрятано» DWM: видимое для Win32, но не на экране (окна других виртуальных столов,
+    /// приостановленные UWP-приложения, скрытые системные панели).
+    /// </summary>
+    public const int DWMWA_CLOAKED = 14;
+
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
 
     // ---- Память ------------------------------------------------------------------------
 

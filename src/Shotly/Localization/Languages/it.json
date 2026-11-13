@@ -68,7 +68,7 @@
   "MenuUninstall": "Disinstalla Shotly…",
   "MenuExit": "Esci",
 
-  "HintSelect": "Seleziona un’area  ·  *clic* — tutto il monitor  ·  *Esc* — annulla",
+  "HintSelect": "Seleziona un’area  ·  *clic* — finestra sotto il cursore o tutto il monitor  ·  *Esc* — annulla",
   "HintCloseAgain": "*Esc* di nuovo — chiudi senza salvare",
   "SizeCopied": "  ·  copiato",
 
