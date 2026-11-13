@@ -6,6 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Shotly.Core;
+using Shotly.Localization;
 
 namespace Shotly.Tray;
 
@@ -121,8 +122,26 @@ internal static class TrayFonts
     private static readonly PrivateFontCollection Collection = new();
     private static bool _loaded;
 
-    public static Font Menu(Font fallback) => Create("Onest", 9f, FontStyle.Regular, fallback);
-    public static Font MenuBold(Font fallback) => Create("Onest", 9f, FontStyle.Bold, fallback);
+    public static Font Menu(Font fallback) => Text(FontStyle.Regular, fallback);
+    public static Font MenuBold(Font fallback) => Text(FontStyle.Bold, fallback);
+
+    /// <summary>
+    /// Текст меню: Onest, а для китайского, японского и корейского — системный шрифт языка
+    /// (в Onest нет иероглифов, и GDI подставил бы случайный шрифт).
+    /// </summary>
+    private static Font Text(FontStyle style, Font fallback)
+    {
+        var local = Loc.Current.GdiFont;
+        if (local.Length > 0)
+        {
+            var font = new Font(local, 9f, style, GraphicsUnit.Point);
+            if (string.Equals(font.Name, local, StringComparison.OrdinalIgnoreCase))
+                return font;
+            font.Dispose(); // шрифта нет в системе — системный шрифт меню сам подберёт иероглифы
+            return new Font(fallback, style);
+        }
+        return Create("Onest", 9f, style, fallback);
+    }
     public static Font Header(Font fallback) => Create("Unbounded", 9.5f, FontStyle.Bold, fallback);
 
     private static Font Create(string family, float size, FontStyle style, Font fallback)

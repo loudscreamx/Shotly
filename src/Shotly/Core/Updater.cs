@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Shotly.Localization;
 
 namespace Shotly.Core;
 
@@ -46,7 +47,7 @@ public static class Updater
     public static async Task<UpdateInfo?> CheckAsync(string repository, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(repository) || repository.Split('/').Length != 2)
-            throw new UpdateException("Источник обновлений не настроен.");
+            throw new UpdateException(L.UpdateSourceMissing);
 
         HttpResponseMessage response;
         try
@@ -55,21 +56,21 @@ public static class Updater
         }
         catch (HttpRequestException ex)
         {
-            throw new UpdateException("Нет связи с GitHub.", ex);
+            throw new UpdateException(L.UpdateNoConnection, ex);
         }
         catch (TaskCanceledException ex) when (!ct.IsCancellationRequested)
         {
-            throw new UpdateException("GitHub не ответил вовремя.", ex);
+            throw new UpdateException(L.UpdateTimeout, ex);
         }
 
         using (response)
         {
             if (response.StatusCode == HttpStatusCode.NotFound)
-                throw new UpdateException("Релизы не найдены: репозиторий закрыт или в нём ещё нет релизов.");
+                throw new UpdateException(L.UpdateNoReleases);
             if (response.StatusCode == HttpStatusCode.Forbidden)
-                throw new UpdateException("GitHub временно ограничил запросы, попробуйте позже.");
+                throw new UpdateException(L.UpdateRateLimited);
             if (!response.IsSuccessStatusCode)
-                throw new UpdateException($"GitHub ответил ошибкой {(int)response.StatusCode}.");
+                throw new UpdateException(L.UpdateHttpError((int)response.StatusCode));
 
             using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
             var root = doc.RootElement;
@@ -118,15 +119,15 @@ public static class Updater
         {
             try { File.Delete(path); } catch (IOException) { }
             throw new UpdateException(ex is OperationCanceledException
-                ? "Загрузка обновления прервана по таймауту."
-                : "Не удалось скачать обновление.", ex);
+                ? L.UpdateDownloadTimeout
+                : L.UpdateDownloadFailed, ex);
         }
 
         // Защита от обрезанной загрузки: настоящий exe весит десятки мегабайт.
         if (new FileInfo(path).Length < 1024 * 1024)
         {
             File.Delete(path);
-            throw new UpdateException("Скачанный файл повреждён.");
+            throw new UpdateException(L.UpdateCorrupted);
         }
 
         return path;

@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Shotly.Editor;
 using Shotly.UI;
+using Shotly.Localization;
 
 namespace Shotly.Overlay;
 
@@ -111,7 +112,7 @@ public sealed class ActionBar : Border
         var pickerContent = new StackPanel();
         pickerContent.Children.Add(new TextBlock
         {
-            Text = "Свой цвет",
+            Text = L.CustomColor,
             FontFamily = Brand.TextFont,
             FontWeight = FontWeights.SemiBold,
             FontSize = 12,
@@ -173,27 +174,27 @@ public sealed class ActionBar : Border
         var panel = new StackPanel { Orientation = Orientation.Horizontal };
         if (editor is null)
         {
-            panel.Children.Add(Button(Glyph.Edit, "Правка", "Стрелки, рамки, текст, маркер, пикселизация и размытие (E)", BarCommand.Edit));
+            panel.Children.Add(Button(Glyph.Edit, L.BarEdit, L.BarEditTip, BarCommand.Edit));
             panel.Children.Add(Divider());
         }
         else
         {
-            panel.Children.Add(Tool(Glyph.Arrow, "Стрелка (A). С Shift — ровный угол", EditorTool.Arrow, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Rectangle, "Рамка (R). С Shift — квадрат", EditorTool.Rectangle, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Pen, "Кисть (D). С Shift — прямая линия", EditorTool.Pen, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Marker, "Маркер, полупрозрачный (M). С Shift — прямая линия", EditorTool.Marker, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Text, "Текст (T). Рамку можно перетащить, а за углы — изменить размер", EditorTool.Text, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Arrow, L.ToolArrow, EditorTool.Arrow, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Rectangle, L.ToolRectangle, EditorTool.Rectangle, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Pen, L.ToolPen, EditorTool.Pen, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Marker, L.ToolMarker, EditorTool.Marker, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Text, L.ToolText, EditorTool.Text, editor.Tool));
             panel.Children.Add(Divider());
-            panel.Children.Add(Tool(Glyph.Blur, "Размытие области (B)", EditorTool.Blur, editor.Tool));
-            panel.Children.Add(Tool(Glyph.BlurBrush, "Размытие кистью (Shift+B). С Shift — прямая линия", EditorTool.BlurBrush, editor.Tool));
-            panel.Children.Add(Tool(Glyph.Pixelate, "Пикселизация (P)", EditorTool.Pixelate, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Blur, L.ToolBlur, EditorTool.Blur, editor.Tool));
+            panel.Children.Add(Tool(Glyph.BlurBrush, L.ToolBlurBrush, EditorTool.BlurBrush, editor.Tool));
+            panel.Children.Add(Tool(Glyph.Pixelate, L.ToolPixelate, EditorTool.Pixelate, editor.Tool));
             panel.Children.Add(Divider());
             AddSizeControl(panel, editor);
             if (editor.Tool == EditorTool.Text)
             {
                 bool on = editor.TextOutline;
                 panel.Children.Add(Clickable(Icons.Element(Glyph.TextOutline, on ? ActiveForegroundBrush : ForegroundBrush),
-                    on ? "Обводка текста включена" : "Обводка текста: контрастный контур вокруг букв", on, enabled: true,
+                    on ? L.TextOutlineOn : L.TextOutlineOff, on, enabled: true,
                     () => OutlineToggled?.Invoke()));
             }
             panel.Children.Add(Divider());
@@ -201,15 +202,15 @@ public sealed class ActionBar : Border
                 panel.Children.Add(Swatch(color, color == editor.Color));
             panel.Children.Add(CustomSwatch(editor));
             panel.Children.Add(Divider());
-            panel.Children.Add(Button(Glyph.Undo, null, "Отменить (Ctrl+Z)", BarCommand.Undo, editor.CanUndo));
-            panel.Children.Add(Button(Glyph.Redo, null, "Повторить (Ctrl+Y)", BarCommand.Redo, editor.CanRedo));
+            panel.Children.Add(Button(Glyph.Undo, null, L.Undo, BarCommand.Undo, editor.CanUndo));
+            panel.Children.Add(Button(Glyph.Redo, null, L.Redo, BarCommand.Redo, editor.CanRedo));
             panel.Children.Add(Divider());
         }
 
-        panel.Children.Add(Button(Glyph.Copy, "Копировать", "Копировать в буфер (Enter, Ctrl+C)", BarCommand.Copy));
-        panel.Children.Add(Button(Glyph.Save, "Сохранить", "Сохранить в файл (Ctrl+S)", BarCommand.Save));
+        panel.Children.Add(Button(Glyph.Copy, L.BarCopy, L.BarCopyTip, BarCommand.Copy));
+        panel.Children.Add(Button(Glyph.Save, L.BarSave, L.BarSaveTip, BarCommand.Save));
         panel.Children.Add(Divider());
-        panel.Children.Add(Button(Glyph.Close, null, "Закрыть без сохранения (Esc; если есть правки — Esc дважды)", BarCommand.Cancel));
+        panel.Children.Add(Button(Glyph.Close, null, L.BarClose, BarCommand.Cancel));
         _toolbarRow.Content = panel;
         InvalidateRows();
     }
@@ -248,10 +249,10 @@ public sealed class ActionBar : Border
         if (_sizeGroup.Parent is Panel old)
             old.Children.Remove(_sizeGroup);
         _sizeGroup.ToolTip = !editor.HasSize
-            ? "У размытия области толщина не меняется"
+            ? L.SizeFixed
             : editor.Tool == EditorTool.Text
-                ? "Размер текста: перетащите ползунок, колесо мыши или [ ]"
-                : "Толщина: перетащите ползунок, колесо мыши или [ ]";
+                ? L.SizeText
+                : L.SizeThickness;
         panel.Children.Add(_sizeGroup);
     }
 
@@ -318,7 +319,7 @@ public sealed class ActionBar : Border
             Child = dot,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var item = Clickable(ring, EditorState.CustomColor is null || customActive ? "Свой цвет: открыть палитру" : "Свой цвет (щёлкните ещё раз, чтобы выбрать другой)", active: false, enabled: true, () =>
+        var item = Clickable(ring, EditorState.CustomColor is null || customActive ? L.CustomColorOpen : L.CustomColorAgain, active: false, enabled: true, () =>
         {
             if (!PickerOpen && EditorState.CustomColor is { } c && !customActive)
                 ColorChosen?.Invoke(c); // повторный щелчок по уже выбранному своему цвету сначала включает его
@@ -353,7 +354,7 @@ public sealed class ActionBar : Border
             Child = dot,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var item = Clickable(ring, "Цвет", active: false, enabled: true, () => ColorChosen?.Invoke(color));
+        var item = Clickable(ring, L.Color, active: false, enabled: true, () => ColorChosen?.Invoke(color));
         item.Padding = new Thickness(3, 5, 3, 5);
         return item;
     }

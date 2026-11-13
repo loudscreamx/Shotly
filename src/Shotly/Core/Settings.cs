@@ -60,6 +60,12 @@ public sealed class AppSettings
     /// <summary>Толщина инструментов редактора в DIP по имени инструмента: запоминается между снимками.</summary>
     public Dictionary<string, double> EditorThickness { get; set; } = new();
 
+    /// <summary>
+    /// Язык интерфейса: код из Localization/Languages (en, ru, de…). Пусто — как язык Windows,
+    /// а если перевода на него нет — английский.
+    /// </summary>
+    public string Language { get; set; } = string.Empty;
+
     /// <summary>Проверять обновления при запуске (один запрос к GitHub, без фоновых таймеров).</summary>
     public bool CheckUpdates { get; set; } = true;
 
@@ -127,6 +133,28 @@ public sealed class SettingsStore
     public string Directory { get; }
     public string FilePath { get; }
 
+    /// <summary>
+    /// Только язык из settings.json, без миграций и записи файла: нужен до проверки, что Shotly уже запущен,
+    /// и в окне удаления. Любая ошибка — пустая строка (язык Windows).
+    /// </summary>
+    public static string PeekLanguage()
+    {
+        try
+        {
+            var path = new SettingsStore().FilePath;
+            if (!File.Exists(path))
+                return string.Empty;
+            using var doc = JsonDocument.Parse(File.ReadAllText(path));
+            return doc.RootElement.TryGetProperty(nameof(AppSettings.Language), out var value) && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return string.Empty;
+        }
+    }
+
     public AppSettings Load()
     {
         try
@@ -164,6 +192,7 @@ public sealed class SettingsStore
         s.Hotkeys.Window ??= d.Hotkeys.Window;
         s.Hotkeys.FullScreen ??= d.Hotkeys.FullScreen;
         s.Hotkeys.RepeatLast ??= d.Hotkeys.RepeatLast;
+        s.Language ??= string.Empty;
         if (string.IsNullOrWhiteSpace(s.SaveFolder))
             s.SaveFolder = d.SaveFolder;
         s.JpegQuality = Math.Clamp(s.JpegQuality, 1, 100);

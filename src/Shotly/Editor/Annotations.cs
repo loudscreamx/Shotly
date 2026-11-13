@@ -255,7 +255,7 @@ public sealed class MarkerAnnotation : StrokeAnnotation
 public sealed class TextAnnotation : Annotation
 {
     // Фирменный Onest (встроен в exe), при сбое загрузки — Segoe UI.
-    private static readonly Typeface Face = Shotly.UI.Brand.TextFaceSemiBold;
+    private static Typeface Face => Shotly.UI.Brand.TextFaceSemiBold;
     private static readonly Color FrameColor = Shotly.UI.Brand.Ember;
 
     public TextAnnotation(Color color, Point origin, double fontSize) : base(color)

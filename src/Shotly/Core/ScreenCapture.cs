@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Shotly.Native;
+using Shotly.Localization;
 
 namespace Shotly.Core;
 
@@ -34,7 +35,7 @@ public sealed class Snapshot
     {
         var r = region.Intersect(VirtualBounds);
         if (r.IsEmpty)
-            throw new ArgumentException($"Область {region} вне экрана.", nameof(region));
+            throw new ArgumentException(L.RegionOffScreen(region), nameof(region));
 
         var cropped = new CroppedBitmap(Image,
             new Int32Rect(r.X - VirtualBounds.X, r.Y - VirtualBounds.Y, r.Width, r.Height));
@@ -59,7 +60,7 @@ public static class ScreenCapture
             NativeMethods.GetSystemMetrics(NativeMethods.SM_CYVIRTUALSCREEN));
 
         if (bounds.IsEmpty || monitors.Count == 0)
-            throw new InvalidOperationException("Не найдено ни одного монитора (сессия заблокирована или экран выключен?).");
+            throw new InvalidOperationException(L.NoMonitors);
 
         var image = Blt(bounds);
         return new Snapshot(image, bounds, monitors);
@@ -72,19 +73,19 @@ public static class ScreenCapture
         {
             screenDc = NativeMethods.GetDC(IntPtr.Zero);
             if (screenDc == IntPtr.Zero)
-                throw new Win32Exception("GetDC вернул NULL.");
+                throw new Win32Exception(L.CaptureCopyFailed + " (GetDC)");
 
             memDc = NativeMethods.CreateCompatibleDC(screenDc);
             hBitmap = NativeMethods.CreateCompatibleBitmap(screenDc, r.Width, r.Height);
             if (memDc == IntPtr.Zero || hBitmap == IntPtr.Zero)
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "Не удалось выделить буфер под снимок экрана.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), L.CaptureMemoryFailed);
 
             oldObj = NativeMethods.SelectObject(memDc, hBitmap);
 
             // CAPTUREBLT — чтобы в кадр попадали layered-окна (всплывающие подсказки, меню).
             if (!NativeMethods.BitBlt(memDc, 0, 0, r.Width, r.Height, screenDc, r.X, r.Y,
                     NativeMethods.SRCCOPY | NativeMethods.CAPTUREBLT))
-                throw new Win32Exception(Marshal.GetLastWin32Error(), "BitBlt не смог скопировать экран.");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), L.CaptureCopyFailed + " (BitBlt)");
 
             // GetDIBits требует, чтобы битмап не был выбран в DC.
             NativeMethods.SelectObject(memDc, oldObj);
@@ -107,7 +108,7 @@ public static class ScreenCapture
                 int lines = NativeMethods.GetDIBits(memDc, hBitmap, 0, (uint)r.Height, wb.BackBuffer,
                     ref header, NativeMethods.DIB_RGB_COLORS);
                 if (lines != r.Height)
-                    throw new Win32Exception("GetDIBits скопировал не все строки снимка.");
+                    throw new Win32Exception(L.CaptureCopyFailed + " (GetDIBits)");
                 wb.AddDirtyRect(new Int32Rect(0, 0, r.Width, r.Height));
             }
             finally

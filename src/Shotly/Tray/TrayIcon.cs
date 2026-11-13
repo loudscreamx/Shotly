@@ -5,6 +5,7 @@ using Microsoft.Win32;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using Shotly.Core;
+using Shotly.Localization;
 using Shotly.UI;
 
 namespace Shotly.Tray;
@@ -37,6 +38,12 @@ public sealed class TrayIcon : IDisposable
     private readonly ToolStripMenuItem _full;
     private readonly ToolStripMenuItem _repeat;
     private readonly int _iconPixels;
+    private readonly ContextMenuStrip _menu;
+    private readonly ToolStripMenuItem _delayed;
+    private readonly ToolStripMenuItem _settingsItem;
+    private readonly Font _systemFont;
+    /// <summary>Пункты меню и откуда брать их текст: при смене языка меню переписывается на месте.</summary>
+    private readonly System.Collections.Generic.List<(ToolStripItem Item, Func<string> Text)> _labels = new();
     private Action? _balloonAction;
 
     public TrayIcon(ITrayCommands commands, AppSettings settings)
@@ -50,7 +57,9 @@ public sealed class TrayIcon : IDisposable
         // Значки рисуются вектором под масштаб основного монитора (как и иконка трея).
         _iconPixels = SystemInformation.SmallIconSize.Width;
         menu.ImageScalingSize = new Size(_iconPixels, _iconPixels);
-        menu.Font = TrayFonts.Menu(menu.Font);
+        _menu = menu;
+        _systemFont = menu.Font;
+        menu.Font = TrayFonts.Menu(_systemFont);
         menu.HandleCreated += (_, _) => RoundCorners(menu.Handle);
 
         Action later(Action a) => () => commands.FromTrayMenu(a);
@@ -60,42 +69,42 @@ public sealed class TrayIcon : IDisposable
         {
             Tag = TrayMenuRenderer.HeaderTag,
             Image = Icons.Bitmap(Brand.Mark, _iconPixels),
-            Font = TrayFonts.Header(menu.Font),
+            Font = TrayFonts.Header(_systemFont),
             ShortcutKeyDisplayString = Installation.Version,
             Padding = new Padding(0, 3, 0, 3),
         };
         menu.Items.Add(header);
         menu.Items.Add(new ToolStripSeparator());
 
-        _region = Item("Область", Glyph.Region, later(commands.CaptureRegion));
-        _window = Item("Активное окно", Glyph.Window, later(commands.CaptureWindow));
-        _full = Item("Весь экран", Glyph.Screen, later(commands.CaptureFullScreen));
-        _repeat = Item("Повторить последнюю область", Glyph.Repeat, later(commands.RepeatLastRegion));
+        _region = Item(() => L.MenuRegion, Glyph.Region, later(commands.CaptureRegion));
+        _window = Item(() => L.MenuWindow, Glyph.Window, later(commands.CaptureWindow));
+        _full = Item(() => L.MenuFullScreen, Glyph.Screen, later(commands.CaptureFullScreen));
+        _repeat = Item(() => L.MenuRepeat, Glyph.Repeat, later(commands.RepeatLastRegion));
         menu.Items.Add(_region);
         menu.Items.Add(_window);
         menu.Items.Add(_full);
         menu.Items.Add(_repeat);
 
-        var delayed = Item("С задержкой", Glyph.Timer, null);
+        var delayed = _delayed = Item(() => L.MenuDelayed, Glyph.Timer, null);
         delayed.DropDown.Renderer = menu.Renderer;
         delayed.DropDown.Font = menu.Font;
         delayed.DropDown.HandleCreated += (_, _) => RoundCorners(delayed.DropDown.Handle);
         if (delayed.DropDown is ToolStripDropDownMenu dropDown)
             dropDown.ShowImageMargin = false;
         foreach (var seconds in new[] { 3, 5, 10 })
-            delayed.DropDownItems.Add(Item($"{seconds} с", null, later(() => commands.CaptureRegionDelayed(seconds))));
+            delayed.DropDownItems.Add(Item(() => L.MenuSeconds(seconds), null, later(() => commands.CaptureRegionDelayed(seconds))));
         menu.Items.Add(delayed);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Открыть папку со снимками", Glyph.Folder, commands.OpenSaveFolder));
-        var settingsItem = Item("Настройки…", Glyph.Settings, commands.OpenSettings);
-        settingsItem.Font = TrayFonts.MenuBold(menu.Font);
+        menu.Items.Add(Item(() => L.MenuOpenFolder, Glyph.Folder, commands.OpenSaveFolder));
+        var settingsItem = _settingsItem = Item(() => L.MenuSettings, Glyph.Settings, commands.OpenSettings);
+        settingsItem.Font = TrayFonts.MenuBold(_systemFont);
         menu.Items.Add(settingsItem);
-        menu.Items.Add(Item("Проверить обновления", Glyph.Update, commands.CheckForUpdates));
+        menu.Items.Add(Item(() => L.MenuCheckUpdates, Glyph.Update, commands.CheckForUpdates));
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(Item("Удалить Shotly…", Glyph.Delete, commands.Uninstall));
-        menu.Items.Add(Item("Выход", Glyph.Exit, commands.Exit));
+        menu.Items.Add(Item(() => L.MenuUninstall, Glyph.Delete, commands.Uninstall));
+        menu.Items.Add(Item(() => L.MenuExit, Glyph.Exit, commands.Exit));
 
         _icon = new NotifyIcon
         {
@@ -146,6 +155,20 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
+    /// <summary>
+    /// Переписывает меню на текущем языке. Значок и само меню не пересоздаются,
+    /// чтобы иконка не прыгала в трее. Шрифт тоже меняется: у китайского, японского и корейского он свой.
+    /// </summary>
+    public void UpdateLanguage()
+    {
+        // Шапка не меняется: в ней только «Shotly» латиницей и номер версии.
+        _menu.Font = TrayFonts.Menu(_systemFont);
+        _delayed.DropDown.Font = _menu.Font;
+        _settingsItem.Font = TrayFonts.MenuBold(_systemFont);
+        foreach (var (item, text) in _labels)
+            item.Text = text();
+    }
+
     /// <summary>Подписи сочетаний в меню после изменения настроек.</summary>
     public void UpdateHotkeys(HotkeySettings h)
     {
@@ -180,12 +203,13 @@ public sealed class TrayIcon : IDisposable
         }
     }
 
-    private ToolStripMenuItem Item(string text, Glyph? glyph, Action? action)
+    private ToolStripMenuItem Item(Func<string> text, Glyph? glyph, Action? action)
     {
-        var item = new ToolStripMenuItem(text)
+        var item = new ToolStripMenuItem(text())
         {
             Padding = new Padding(0, 3, 0, 3),
         };
+        _labels.Add((item, text));
         if (glyph is { } g)
             item.Image = Icons.Bitmap(g, Brand.Text, _iconPixels);
         if (action is not null)

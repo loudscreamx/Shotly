@@ -11,6 +11,7 @@ using Microsoft.Win32;
 using Shotly.Capture;
 using Shotly.Core;
 using Shotly.Editor;
+using Shotly.Localization;
 using Shotly.Tray;
 using Shotly.UI;
 
@@ -42,6 +43,9 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     {
         base.OnStartup(e);
 
+        // Язык нужен раньше всего остального: даже окно удаления и ошибка запуска показываются на нём.
+        ApplyLanguage(SettingsStore.PeekLanguage());
+
         if (Array.Exists(e.Args, a => string.Equals(a, "--uninstall", StringComparison.OrdinalIgnoreCase)))
         {
             // Запуск из «Установленных приложений»: работающий экземпляр нужно сначала закрыть.
@@ -72,6 +76,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         {
             _store = new SettingsStore();
             _settings = _store.Load();
+            ApplyLanguage(_settings.Language);
             _output = new OutputService(() => _settings);
             _tray = new TrayIcon(this, _settings);
 
@@ -88,7 +93,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         {
             // Без трея и хоткеев процесс бесполезен и только держит мьютекс: сообщаем и выходим.
             Log.Error("Ошибка запуска", ex);
-            MessageBox.Show("Shotly не смог запуститься:\n" + ex.Message + "\n\nПодробности в " + Log.FilePath,
+            MessageBox.Show(L.StartupFailed(ex.Message, Log.FilePath),
                 "Shotly", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
             return;
@@ -138,7 +143,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         foreach (var error in TryRegisterHotkeys())
         {
             Log.Error($"Горячая клавиша не зарегистрирована: {error}");
-            _tray?.Notify("Горячая клавиша недоступна", error + ". Её можно поменять в настройках.", error: true);
+            _tray?.Notify(L.HotkeyUnavailableTitle, L.HotkeyUnavailableText(error), error: true);
         }
     }
 
@@ -153,14 +158,12 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
         if (SnippingKey.TryDisable())
         {
-            _tray?.Notify("PrtScn теперь у Shotly",
-                "В Windows выключено открытие «Ножниц» по PrtScn. Вернуть можно в Параметры → Специальные возможности → Клавиатура.");
+            _tray?.Notify(L.PrtScnFreedTitle, L.PrtScnFreedText);
             return null;
         }
 
-        const string error = "PrtScn перехватывают «Ножницы», и выключить это автоматически не получилось. " +
-                             "Выключите в Windows «Использовать клавишу Print Screen для захвата экрана»";
-        _tray?.Notify("PrtScn открывает «Ножницы»", error + ". Нажмите, чтобы открыть параметры.", SnippingKey.OpenSettings);
+        var error = L.PrtScnBlockedError;
+        _tray?.Notify(L.PrtScnBlockedTitle, L.PrtScnBlockedText(error), SnippingKey.OpenSettings);
         return error;
     }
 
@@ -295,7 +298,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         {
             // Огромное выделение с правками может не влезть в память: отдаём хотя бы снимок без них.
             Log.Error("Не удалось наложить правки на снимок", ex);
-            _tray?.Notify("Правки не сохранились", "Снимок слишком большой, сохранён без аннотаций.", error: true);
+            _tray?.Notify(L.EditsLostTitle, L.EditsLostText, error: true);
             image = snapshot.Crop(result.Region);
         }
         await DeliverAsync(image, result.Action == CaptureAction.Save ? QuickAction.Save : QuickAction.Copy);
@@ -328,12 +331,12 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         {
             // PNG большого экрана кодируется сотни миллисекунд — в фоне, чтобы не замирала вспышка.
             var path = await Task.Run(() => _output.Save(image));
-            _tray?.Notify(copied ? "Снимок скопирован и сохранён" : "Снимок сохранён", path);
+            _tray?.Notify(copied ? L.SavedAndCopiedTitle : L.SavedTitle, path);
         }
         catch (Exception ex)
         {
             Log.Error("Не удалось сохранить снимок", ex);
-            _tray?.Notify("Снимок не сохранён", (copied ? "В буфере обмена он есть. " : string.Empty) + ex.Message, error: true);
+            _tray?.Notify(L.SaveFailedTitle, copied ? L.SaveFailedStillCopied(ex.Message) : ex.Message, error: true);
         }
     }
 
@@ -348,7 +351,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         {
             Log.Error("Не удалось скопировать в буфер обмена", ex);
             if (notify)
-                _tray?.Notify("Буфер обмена занят", "Снимок не скопирован. " + ex.Message, error: true);
+                _tray?.Notify(L.ClipboardBusyTitle, L.ClipboardBusyText(ex.Message), error: true);
             return false;
         }
     }
@@ -371,7 +374,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         catch (Exception ex)
         {
             Log.Error("Ошибка захвата", ex);
-            _tray?.Notify("Не удалось сделать снимок", ex.Message, error: true);
+            _tray?.Notify(L.CaptureFailedTitle, ex.Message, error: true);
         }
         finally
         {
@@ -391,6 +394,24 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         Log.Error("Ошибка в UI-потоке", e.Exception);
         e.Handled = true;
         _session?.Cancel();
+    }
+
+    // ---- Язык ------------------------------------------------------------------------
+
+    /// <summary>
+    /// Переключает язык интерфейса. Меню трея переписывается сразу, а окна (оверлей, уведомления,
+    /// настройки) создаются заново при каждом показе и берут новый язык сами.
+    /// </summary>
+    private void ApplyLanguage(string? setting)
+    {
+        bool changed = Loc.Apply(setting);
+        // Шрифт стилей (подсказки и т. п.) зависит от языка: для китайского, японского и корейского свой.
+        Resources[Brand.TextFontKey] = Brand.TextFont;
+        if (changed)
+        {
+            Log.Info($"Язык интерфейса: {Loc.Current.Code}");
+            _tray?.UpdateLanguage();
+        }
     }
 
     // ---- Настройки ---------------------------------------------------------------------
@@ -430,6 +451,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         next.UpdateRepository = _settings.UpdateRepository;
         _settings = next;
         _store.Save(_settings);
+        ApplyLanguage(_settings.Language);
         _tray?.UpdateHotkeys(_settings.Hotkeys);
 
         var errors = new List<string>();
@@ -441,7 +463,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         catch (Exception ex)
         {
             Log.Error("Не удалось изменить автозапуск", ex);
-            errors.Add("Автозапуск не изменён: " + ex.Message);
+            errors.Add(L.AutostartFailed(ex.Message));
         }
 
         // Одиночная PrtScn: регистрация пройдёт, но нажатия заберут «Ножницы», поэтому сразу отдаём её Shotly.
@@ -452,7 +474,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         errors.AddRange(TryRegisterHotkeys());
         _hotkeys!.UnregisterAll();
         if (errors.Count > 0)
-            errors.Add("Остальные настройки сохранены.");
+            errors.Add(L.OtherSettingsSaved);
         return errors;
     }
 
@@ -469,7 +491,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
             await Task.Delay(TimeSpan.FromSeconds(15)); // не мешаем запуску
             var info = await Updater.CheckAsync(_settings.EffectiveUpdateRepository);
             if (info is not null)
-                _tray?.Notify("Доступна новая версия Shotly", $"Версия {info.Version}. Нажмите, чтобы установить.",
+                _tray?.Notify(L.UpdateAvailableTitle, L.UpdateAvailableText(info.Version),
                     () => InstallUpdate(info, ask: false));
         }
         catch (Exception ex)
@@ -491,7 +513,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         catch (Exception ex)
         {
             Log.Error("Проверка обновлений", ex);
-            ShowMessage("Не удалось проверить обновления.\n" + ex.Message, MessageBoxImage.Warning);
+            ShowMessage(L.UpdateCheckFailed(ex.Message), MessageBoxImage.Warning);
             return;
         }
         finally
@@ -501,7 +523,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
         if (info is null)
         {
-            ShowMessage($"У вас последняя версия Shotly ({Installation.Version}).", MessageBoxImage.Information);
+            ShowMessage(L.UpToDate(Installation.Version), MessageBoxImage.Information);
             return;
         }
 
@@ -512,16 +534,16 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     {
         if (_updating)
             return;
-        if (ask && (_settingsWindow is { IsVisible: true } w ? MessageBox.Show(w, $"Доступна версия {info.Version} (у вас {Installation.Version}).\n\nУстановить сейчас? Shotly перезапустится.",
-                "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)
-            : MessageBox.Show($"Доступна версия {info.Version} (у вас {Installation.Version}).\n\nУстановить сейчас? Shotly перезапустится.",
-                "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)) != MessageBoxResult.Yes)
+        var question = L.UpdateConfirm(info.Version, Installation.Version);
+        if (ask && (_settingsWindow is { IsVisible: true } w
+                ? MessageBox.Show(w, question, "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)
+                : MessageBox.Show(question, "Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question)) != MessageBoxResult.Yes)
             return;
 
         _updating = true;
         try
         {
-            _tray?.Notify("Загрузка обновления", $"Shotly {info.Version}…");
+            _tray?.Notify(L.UpdateDownloadingTitle, $"Shotly {info.Version}…");
             var file = await Updater.DownloadAsync(info);
             Log.Info($"Установка обновления {info.Version}");
             Updater.ApplyAndRestart(file);
@@ -530,7 +552,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         catch (Exception ex)
         {
             Log.Error("Не удалось установить обновление", ex);
-            ShowMessage("Не удалось установить обновление.\n" + ex.Message, MessageBoxImage.Warning);
+            ShowMessage(L.UpdateInstallFailed(ex.Message), MessageBoxImage.Warning);
             _updating = false;
         }
     }
@@ -575,8 +597,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
 
         if (!closed)
         {
-            ShowMessage("Shotly всё ещё запущен. Закройте его через значок в трее («Выход») и повторите удаление.",
-                MessageBoxImage.Warning);
+            ShowMessage(L.StillRunning, MessageBoxImage.Warning);
             Shutdown();
             return;
         }
@@ -589,15 +610,13 @@ public partial class App : Application, ITrayCommands, ISettingsHost
     }
 
     private static bool ConfirmUninstall() =>
-        MessageBox.Show("Удалить Shotly?\n\nБудут удалены программа, её настройки, автозапуск и запись в списке приложений. " +
-                        "Сделанные снимки останутся на месте.",
-            "Удаление Shotly", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
+        MessageBox.Show(L.UninstallConfirm, L.UninstallTitle, MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes;
 
     private void ShowUninstalled(string folder, bool exeScheduled)
     {
-        var text = "Shotly удалён. Ваши снимки остались в папке:\n" + folder;
+        var text = L.Uninstalled(folder);
         if (!exeScheduled)
-            text += "\n\nФайл программы удалите вручную:\n" + Installation.ExePath;
+            text += "\n\n" + L.UninstalledDeleteExe(Installation.ExePath);
         ShowMessage(text, MessageBoxImage.Information);
     }
 
@@ -622,7 +641,7 @@ public partial class App : Application, ITrayCommands, ISettingsHost
         catch (Exception ex)
         {
             Log.Error("Не удалось открыть папку со снимками", ex);
-            _tray?.Notify("Папка недоступна", ex.Message, error: true);
+            _tray?.Notify(L.FolderUnavailableTitle, ex.Message, error: true);
         }
     }
 
