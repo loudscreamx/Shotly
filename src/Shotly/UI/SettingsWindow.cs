@@ -228,7 +228,7 @@ public sealed class SettingsWindow : Window
             FontSize = 12,
             LineHeight = 17,
             Margin = new Thickness(0, 2, 0, 0),
-            Text = "Одиночную PrtScn в Windows 11 занимают «Ножницы». Чтобы отдать её Shotly, выключите в Windows " +
+            Text = "Одиночную PrtScn в Windows 11 занимают «Ножницы». Если назначить её Shotly, он сам выключит в Windows " +
                    "«Использовать клавишу Print Screen для захвата экрана». ",
         };
         var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Открыть параметры"));
@@ -322,16 +322,7 @@ public sealed class SettingsWindow : Window
         _draft.CheckUpdates = _checkUpdates.IsChecked == true;
         _draft.CopyOnSelect = _copyOnSelect.IsChecked == true;
 
-        // Одиночная PrtScn: регистрация в Windows пройдёт, но нажатия заберут «Ножницы». Спрашиваем сразу,
-        // до применения, чтобы проверка сочетаний шла уже с освобождённой клавишей.
-        string? snippingWarning = null;
-        if (SnippingKey.Conflicts(_draft.Hotkeys) && !SnippingKey.OfferToDisable(this))
-            snippingWarning = "PrtScn сохранена, но пока её перехватывают «Ножницы» Windows. Выключите параметр " +
-                              "по ссылке выше или назначьте сочетание с Ctrl, Alt или Shift.";
-
-        var errors = new System.Collections.Generic.List<string>(_host.Apply(_draft, _autostart.IsChecked == true));
-        if (snippingWarning is not null)
-            errors.Insert(0, snippingWarning);
+        var errors = _host.Apply(_draft, _autostart.IsChecked == true);
         if (errors.Count > 0)
         {
             // Настройки сохранены, но о проблемах нужно сказать, не закрывая окно.
