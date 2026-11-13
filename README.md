@@ -26,6 +26,12 @@
 
 </div>
 
+<br>
+
+<p align="center">
+  <img src="assets/readme/demo.gif" alt="Как работает Shotly: Ctrl+PrtScn, выделение области, стрелка, рамка и пикселизация, сохранение" width="100%">
+</p>
+
 ---
 
 ## Как начать
@@ -40,6 +46,13 @@
 Настройки, автозапуск и проверка обновлений — в меню значка в трее.
 
 ## Возможности
+
+<p align="center">
+  <img src="assets/readme/slide-hotkeys.png" alt="Горячие клавиши: всё вокруг PrtScn" width="49%">
+  <img src="assets/readme/slide-editor.png" alt="Редактор: 8 инструментов, у каждого своя клавиша" width="49%">
+  <img src="assets/readme/slide-monitors.png" alt="Несколько мониторов с разным масштабом" width="49%">
+  <img src="assets/readme/slide-light.png" alt="Один файл, живёт в трее" width="49%">
+</p>
 
 | | |
 | --- | --- |
