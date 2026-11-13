@@ -31,7 +31,7 @@ with global hotkeys and proper multi-monitor support.
 <br>
 
 <p align="center">
-  <img src="assets/readme/demo.gif" alt="How Shotly works: Ctrl+PrtScn, selecting an area, arrow, box and pixelate, saving" width="100%">
+  <img src="assets/readme/en/demo.gif" alt="How Shotly works: Ctrl+PrtScn, selecting an area, arrow, box and pixelate, saving" width="100%">
 </p>
 
 ---
@@ -50,10 +50,10 @@ Settings, autostart and update checks are in the tray icon menu.
 ## Features
 
 <p align="center">
-  <img src="assets/readme/slide-hotkeys.png" alt="Hotkeys: everything around PrtScn" width="49%">
-  <img src="assets/readme/slide-editor.png" alt="Editor: 8 tools, each with its own key" width="49%">
-  <img src="assets/readme/slide-monitors.png" alt="Multiple monitors with different scaling" width="49%">
-  <img src="assets/readme/slide-light.png" alt="A single file that lives in the tray" width="49%">
+  <img src="assets/readme/en/slide-hotkeys.png" alt="Hotkeys: everything around PrtScn" width="49%">
+  <img src="assets/readme/en/slide-editor.png" alt="Editor: 8 tools, each with its own key" width="49%">
+  <img src="assets/readme/en/slide-monitors.png" alt="Multiple monitors with different scaling" width="49%">
+  <img src="assets/readme/en/slide-light.png" alt="A single file that lives in the tray" width="49%">
 </p>
 
 | | |
