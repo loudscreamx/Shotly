@@ -46,13 +46,13 @@ public sealed class HotkeyManager : IDisposable
         return null;
     }
 
-    private static readonly uint VK_SNAPSHOT = (uint)KeyInterop.VirtualKeyFromKey(Key.PrintScreen);
+    internal static readonly uint VkSnapshot = (uint)KeyInterop.VirtualKeyFromKey(Key.PrintScreen);
 
     /// <summary>Объяснение, кто обычно занимает сочетание. У PrtScn в Windows 11 свои частые «владельцы».</summary>
     private static string BusyMessage(string gesture, uint modifiers, uint vk)
     {
         var name = $"«{Display(gesture)}»";
-        if (vk != VK_SNAPSHOT)
+        if (vk != VkSnapshot)
             return $"{name}: сочетание уже занято другой программой";
         if ((modifiers & NativeMethods.MOD_WIN) != 0)
             return $"{name}: это системное сочетание Windows, его нельзя переназначить";
